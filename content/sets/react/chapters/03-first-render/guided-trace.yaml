@@ -1,0 +1,434 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "// ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "createRoot(…).render(<App />): from a DOM node to a scheduled render"
+level: practitioner
+minutes: 12
+pin: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+example:
+  label: The call we follow
+  request: "createRoot(document.getElementById('root')).render(<App />)"
+  target: "a Scheduler task that will render <App />"
+steps:
+  - id: step-1
+    title: createRoot checks the container and builds a FiberRoot
+    symbol: createRoot
+    package: react-dom
+    file: packages/react-dom/src/client/ReactDOMRoot.js
+    lines: 171-262
+    body: >-
+      The public entry point in react-dom/client. After validating the DOM node and reading options, it
+      asks the reconciler for a container — a FiberRoot, tagged ConcurrentRoot. Two things happen to the
+      DOM node before anything is rendered: it is marked as a React root, and React attaches its own
+      listeners for every event it supports — capture phase and, for most events, bubble phase — to it.
+      What you get back is a thin ReactDOMRoot that only holds _internalRoot.
+    code: |
+      export function createRoot(
+        container: Element | Document | DocumentFragment,
+        options?: CreateRootOptions,
+      ): RootType {
+        if (!isValidContainer(container)) {
+          throw new Error('Target container is not a DOM element.');
+        }
+        // ... read options: strict mode, identifierPrefix, error handlers, transition callbacks
+        const root = createContainer(
+          container,
+          ConcurrentRoot,
+          null,
+          isStrictMode,
+          concurrentUpdatesByDefaultOverride,
+          identifierPrefix,
+          onUncaughtError,
+          onCaughtError,
+          onRecoverableError,
+          onDefaultTransitionIndicator,
+          transitionCallbacks,
+        );
+        markContainerAsRoot(root.current, container);
+
+        const rootContainerElement: Document | Element | DocumentFragment =
+          !disableCommentsAsDOMContainers && container.nodeType === COMMENT_NODE
+            ? (container.parentNode as any)
+            : container;
+        listenToAllSupportedEvents(rootContainerElement);
+
+        // $FlowFixMe[invalid-constructor] Flow no longer supports calling new on functions
+        return new ReactDOMRoot(root);
+      }
+    next: createContainer → createFiberRoot(containerInfo, tag, …)
+  - id: step-2
+    title: Two objects that point at each other
+    symbol: createFiberRoot
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRoot.js
+    lines: 157-236
+    body: >-
+      createContainer passes straight through to here. The FiberRoot is not a fiber: it is the bookkeeping
+      object for the whole tree (pending lanes, the scheduled task, the DOM container). Its current field
+      points at a HostRoot fiber, and that fiber's stateNode points back. The HostRoot fiber starts with
+      element null and an empty update queue; rendering <App /> will be an update on that queue.
+    code: |
+      export function createFiberRoot(
+        containerInfo: Container,
+        // ... tag, hydrate, strict mode, error handlers and other options
+      ): FiberRoot {
+        // $FlowFixMe[invalid-constructor] Flow no longer supports calling new on functions
+        const root: FiberRoot = new FiberRootNode(
+          containerInfo,
+          tag,
+          hydrate,
+          identifierPrefix,
+          onUncaughtError,
+          onCaughtError,
+          onRecoverableError,
+          onDefaultTransitionIndicator,
+          formState,
+        ) as any;
+        // ... suspense and transition-tracing callbacks
+        // Cyclic construction. This cheats the type system right now because
+        // stateNode is any.
+        const uninitializedFiber = createHostRootFiber(tag, isStrictMode);
+        root.current = uninitializedFiber;
+        uninitializedFiber.stateNode = root;
+
+        const initialCache = createCache();
+        retainCache(initialCache);
+        // ... the pooled cache
+        const initialState: RootState = {
+          element: initialChildren,
+          isDehydrated: hydrate,
+          cache: initialCache,
+        };
+        uninitializedFiber.memoizedState = initialState;
+
+        initializeUpdateQueue(uninitializedFiber);
+
+        return root;
+      }
+    next: "root.render(<App />)"
+  - id: step-3
+    title: render is a method on the thin wrapper
+    symbol: ReactDOMRoot.prototype.render
+    package: react-dom
+    file: packages/react-dom/src/client/ReactDOMRoot.js
+    lines: 107-136
+    body: >-
+      The same function serves roots made by createRoot and hydrateRoot. It unwraps the FiberRoot and
+      hands the element to updateContainer. There is no callback argument any more; the DEV branch only
+      exists to warn people who still pass one.
+    code: |
+      ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render =
+        // $FlowFixMe[missing-this-annot]
+        function (children: ReactNodeList): void {
+          const root = this._internalRoot;
+          if (root === null) {
+            throw new Error('Cannot update an unmounted root.');
+          }
+          // ... DEV warnings about a second argument
+          updateContainer(children, root, null, null);
+        };
+    next: updateContainer(children, root, null, null)
+  - id: step-4
+    title: Every update first gets a lane
+    symbol: updateContainer
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberReconciler.js
+    lines: 353-370
+    body: >-
+      container.current is the HostRoot fiber from step 2. Before anything is queued, React decides how
+      urgent this update is by asking for a lane — a single bit in a 31-bit mask. Lanes are how every later
+      step compares, batches and orders work.
+    code: |
+      export function updateContainer(
+        element: ReactNodeList,
+        container: OpaqueRoot,
+        parentComponent: ?component(...props: any),
+        callback: ?Function,
+      ): Lane {
+        const current = container.current;
+        const lane = requestUpdateLane(current);
+        updateContainerImpl(
+          current,
+          lane,
+          element,
+          container,
+          parentComponent,
+          callback,
+        );
+        return lane;
+      }
+    next: requestUpdateLane(current)
+  - id: step-5
+    title: No render in progress, no transition
+    symbol: requestUpdateLane
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 812-868
+    body: >-
+      The special cases come first: legacy roots are always SyncLane, and an update fired while this root
+      is rendering borrows the lanes being rendered. An update inside startTransition gets a transition
+      lane. Ours is neither, so the lane comes from the current event priority, which the DOM renderer
+      supplies.
+    code: |
+      export function requestUpdateLane(fiber: Fiber): Lane {
+        // Special cases
+        const mode = fiber.mode;
+        if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
+          return SyncLane as Lane;
+        } else if (
+          (executionContext & RenderContext) !== NoContext &&
+          workInProgressRootRenderLanes !== NoLanes
+        ) {
+          // ... render-phase updates reuse the lanes being rendered
+          return pickArbitraryLane(workInProgressRootRenderLanes);
+        }
+
+        const transition = requestCurrentTransition();
+        if (transition !== null) {
+          // ... gesture check and DEV bookkeeping
+          return requestTransitionLane(transition);
+        }
+
+        const priority = resolveUpdatePriority();
+        // ... DEV only
+        return eventPriorityToLane(priority);
+      }
+    next: resolveUpdatePriority() → react-dom-bindings
+  - id: step-6
+    title: The DOM reads window.event
+    symbol: resolveUpdatePriority
+    package: react-dom-bindings
+    file: packages/react-dom-bindings/src/client/ReactDOMUpdatePriority.js
+    lines: 35-45
+    body: >-
+      An explicit priority set by React itself wins. Otherwise the renderer looks at the browser event
+      being dispatched right now: a click is discrete, a scroll is continuous. Our render call runs at
+      module load, outside any event, so window.event is undefined and the answer is DefaultEventPriority.
+      Event priorities are defined as lanes, so eventPriorityToLane just returns it: DefaultLane.
+    code: |
+      export function resolveUpdatePriority(): EventPriority {
+        const updatePriority = ReactDOMSharedInternals.p; /* currentUpdatePriority */
+        if (updatePriority !== NoEventPriority) {
+          return updatePriority;
+        }
+        const currentEvent = window.event;
+        if (currentEvent === undefined) {
+          return DefaultEventPriority;
+        }
+        return getEventPriority(currentEvent.type);
+      }
+    next: updateContainerImpl(current, DefaultLane, <App />, …)
+  - id: step-7
+    title: The element becomes the payload of an update
+    symbol: updateContainerImpl
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberReconciler.js
+    lines: 393-458
+    body: >-
+      Nothing is rendered here. An update object is created for the lane and its payload is {element} —
+      the same element field the HostRoot's state was initialised with in step 2. enqueueUpdate stashes it
+      in a concurrent queue (it moves onto the HostRoot's queue when the next render starts), sets the lane
+      on the fiber, and returns the FiberRoot, which is then marked as needing work.
+    code: |
+      function updateContainerImpl(
+        rootFiber: Fiber,
+        lane: Lane,
+        element: ReactNodeList,
+        container: OpaqueRoot,
+        parentComponent: ?component(...props: any),
+        callback: ?Function,
+      ): void {
+        // ... DEV hooks, scheduling profiler, legacy context
+        const update = createUpdate(lane);
+        // Caution: React DevTools currently depends on this property
+        // being called "element".
+        update.payload = {element};
+        // ... optional callback (legacy roots only)
+        const root = enqueueUpdate(rootFiber, update, lane);
+        if (root !== null) {
+          startUpdateTimerByLane(lane, 'root.render()', null);
+          scheduleUpdateOnFiber(root, rootFiber, lane);
+          entangleTransitions(root, rootFiber, lane);
+        }
+      }
+    next: scheduleUpdateOnFiber(root, rootFiber, lane)
+  - id: step-8
+    title: The root records the pending lane
+    symbol: scheduleUpdateOnFiber
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 987-1113
+    body: >-
+      This is where every kind of update meets: root.render, setState, a class component's setState.
+      markRootUpdated ORs the lane into root.pendingLanes. Most of the rest handles an update that arrives
+      while a render is already in progress. Ours is not, so the interesting line is ensureRootIsScheduled.
+    code: |
+      export function scheduleUpdateOnFiber(
+        root: FiberRoot,
+        fiber: Fiber,
+        lane: Lane,
+      ) {
+        // ... DEV warnings; restart if the current render is suspended on data
+        // Mark that the root has a pending update.
+        markRootUpdated(root, lane);
+
+        if (
+          (executionContext & RenderContext) !== NoContext &&
+          root === workInProgressRoot
+        ) {
+          // ... an update during the render phase
+        } else {
+          // ... DevTools and transition tracing bookkeeping
+          if (root === workInProgressRoot) {
+            // ... interleaved update into an in-progress render
+          }
+
+          ensureRootIsScheduled(root);
+          // ... legacy-mode synchronous flush
+        }
+      }
+    next: ensureRootIsScheduled(root)
+  - id: step-9
+    title: Roots wait in a list for a microtask
+    symbol: ensureRootIsScheduled
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRootScheduler.js
+    lines: 116-169
+    body: >-
+      Scheduling is deferred on purpose. The root is appended to a linked list of scheduled roots, and at
+      most one microtask is requested no matter how many updates arrive in the same tick. That is what
+      batches several setState calls in one event handler into one render.
+    code: |
+      export function ensureRootIsScheduled(root: FiberRoot): void {
+        // ... comment: this only adds the root to the schedule and requests a microtask
+        // Add the root to the schedule
+        if (root === lastScheduledRoot || root.next !== null) {
+          // Fast path. This root is already scheduled.
+        } else {
+          if (lastScheduledRoot === null) {
+            firstScheduledRoot = lastScheduledRoot = root;
+          } else {
+            lastScheduledRoot.next = root;
+            lastScheduledRoot = root;
+          }
+        }
+        // ... mightHavePendingSyncWork = true
+        ensureScheduleIsScheduled();
+        // ... act() bookkeeping for legacy roots
+      }
+
+      export function ensureScheduleIsScheduled(): void {
+        // ... act() queue in tests
+          if (!didScheduleMicrotask) {
+            didScheduleMicrotask = true;
+            scheduleImmediateRootScheduleTask();
+          }
+        }
+      }
+    next: scheduleImmediateRootScheduleTask()
+  - id: step-10
+    title: queueMicrotask, not the Scheduler
+    symbol: scheduleImmediateRootScheduleTask
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRootScheduler.js
+    lines: 650-696
+    body: >-
+      In the browser supportsMicrotasks is true and scheduleMicrotask is queueMicrotask (with a Promise
+      fallback). The callback runs right after the current script finishes. The Safari guard only matters
+      if a microtask fires in the middle of React's own render or commit.
+    code: |
+      function scheduleImmediateRootScheduleTask() {
+        // ... act() queue in tests
+        // TODO: Can we land supportsMicrotasks? Which environments don't support it?
+        // Alternatively, can we move this check to the host config?
+        // $FlowFixMe[constant-condition]
+        if (supportsMicrotasks) {
+          scheduleMicrotask(() => {
+            // ... Safari: if already rendering or committing, use a Scheduler task instead
+            processRootScheduleInMicrotask();
+          });
+        } else {
+          // If microtasks are not supported, use Scheduler.
+          Scheduler_scheduleCallback(
+            ImmediateSchedulerPriority,
+            processRootScheduleInImmediateTask,
+          );
+        }
+      }
+    next: processRootScheduleInMicrotask → scheduleTaskForRootDuringMicrotask(root, now)
+  - id: step-11
+    title: DefaultLane becomes a NormalPriority Scheduler task
+    symbol: scheduleTaskForRootDuringMicrotask
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRootScheduler.js
+    lines: 384-509
+    body: >-
+      The microtask walks the root list and calls this for each root. getNextLanes picks DefaultLane from
+      pendingLanes. It is not SyncLane — sync work would be flushed at the end of the same microtask — so
+      React asks the Scheduler package for a task at NormalPriority and stores it as root.callbackNode.
+      The render itself will start when the Scheduler calls performWorkOnRootViaSchedulerTask.
+    code: |
+      function scheduleTaskForRootDuringMicrotask(
+        root: FiberRoot,
+        currentTime: number,
+      ): Lane {
+        // ... comments: never performs React work synchronously
+        markStarvedLanesAsExpired(root, currentTime);
+        // ... pending passive effects, work-in-progress root
+        const nextLanes =
+          enableYieldingBeforePassive && root === rootWithPendingPassiveEffects
+            ? // This will schedule the callback at the priority of the lane but we used to
+              // always schedule it at NormalPriority. Discrete will flush it sync anyway.
+              // So the only difference is Idle and it doesn't seem necessarily right for that
+              // to get upgraded beyond something important just because we're past commit.
+              pendingPassiveEffectsLanes
+            : getNextLanes(
+                root,
+                root === workInProgressRoot ? workInProgressRootRenderLanes : NoLanes,
+                rootHasPendingCommit,
+              );
+        // ... nothing to do, or suspended: cancel any task and return NoLane
+        // Schedule a new callback in the host environment.
+        if (
+          includesSyncLane(nextLanes) &&
+          // If we're prerendering, then we should use the concurrent work loop
+          // even if the lanes are synchronous, so that prerendering never blocks
+          // the main thread.
+          !checkIfRootIsPrerendering(root, nextLanes)
+        ) {
+          // ... sync work is flushed at the end of the microtask
+          return SyncLane;
+        } else {
+          // ... reuse the existing task if its priority has not changed
+          let schedulerPriorityLevel;
+          switch (lanesToEventPriority(nextLanes)) {
+            // ... Discrete and Continuous → UserBlockingSchedulerPriority
+            case DefaultEventPriority:
+              schedulerPriorityLevel = NormalSchedulerPriority;
+              break;
+            // ... Idle → IdleSchedulerPriority; anything else → NormalSchedulerPriority
+          }
+
+          const newCallbackNode = scheduleCallback(
+            schedulerPriorityLevel,
+            performWorkOnRootViaSchedulerTask.bind(null, root),
+          );
+
+          root.callbackPriority = newCallbackPriority;
+          root.callbackNode = newCallbackNode;
+          return newCallbackPriority;
+        }
+      }
+    next: Scheduler → performWorkOnRootViaSchedulerTask(root)
+tracked_symbols:
+  - { symbol: createRoot, file: packages/react-dom/src/client/ReactDOMRoot.js, used_in: step-1 }
+  - { symbol: createFiberRoot, file: packages/react-reconciler/src/ReactFiberRoot.js, used_in: step-2 }
+  - { symbol: ReactDOMRoot.prototype.render, file: packages/react-dom/src/client/ReactDOMRoot.js, used_in: step-3 }
+  - { symbol: updateContainer, file: packages/react-reconciler/src/ReactFiberReconciler.js, used_in: step-4 }
+  - { symbol: requestUpdateLane, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-5 }
+  - { symbol: resolveUpdatePriority, file: packages/react-dom-bindings/src/client/ReactDOMUpdatePriority.js, used_in: step-6 }
+  - { symbol: updateContainerImpl, file: packages/react-reconciler/src/ReactFiberReconciler.js, used_in: step-7 }
+  - { symbol: scheduleUpdateOnFiber, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-8 }
+  - { symbol: ensureRootIsScheduled, file: packages/react-reconciler/src/ReactFiberRootScheduler.js, used_in: step-9 }
+  - { symbol: scheduleImmediateRootScheduleTask, file: packages/react-reconciler/src/ReactFiberRootScheduler.js, used_in: step-10 }
+  - { symbol: scheduleTaskForRootDuringMicrotask, file: packages/react-reconciler/src/ReactFiberRootScheduler.js, used_in: step-11 }

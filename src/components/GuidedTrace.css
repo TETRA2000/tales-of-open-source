@@ -230,8 +230,12 @@
   white-space: nowrap;
 }
 .gt-handoff-call {
+  /* A flex item: without min-width 0 it cannot shrink below its longest word. */
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 14px;
+  /* Calls like Scheduler.unstable_scheduleCallback(NormalPriority, callback) have few break points. */
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {

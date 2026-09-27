@@ -1,0 +1,52 @@
+# Parts follow the design prototype's React cover (Elements · Fiber · Hooks · Scheduling · Commit).
+# Chapter list is a proposed outline; GT chapters have their traces.
+id: react
+title: React
+subtitle: in depth
+accent: "#6CC8D6"
+accent_hover: "#8FD8E4"
+repo: facebook/react
+pin:
+  commit: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+  release: "v19.3.0"
+  synced_at: "2026-09-27"
+blurb: How a component tree becomes fibers, and how updates are scheduled and committed.
+description: >-
+  Twelve chapters that open the library up: how createRoot builds a fiber tree, how the render phase
+  walks it, how hooks keep state between renders, how lanes and the Scheduler decide what runs when,
+  and how the commit phase finally touches the DOM.
+paths:
+  - { level: newcomer, name: The short way round, formats: [QT],
+      what: "Every chapter's Quick Tale in order. One analogy and one diagram each; no prior React internals needed." }
+  - { level: practitioner, name: Follow the calls, formats: [GT, AN],
+      what: "Guided Traces and Anatomies: step through real call paths and the fibers, hooks and lanes they pass around." }
+  - { level: contributor, name: Read the source, formats: [SR, FG],
+      what: "Source Readings plus the repo Field Guide, for anyone planning to read — or send — a pull request." }
+parts:
+  - num: I
+    title: Elements
+    chapters:
+      - { id: 01-repository-map, title: The repository map, path_hint: "packages/react/ · packages/react-reconciler/ · packages/react-dom/ …", formats: [FG] }
+      - { id: 02-elements, title: From JSX to elements, path_hint: packages/react/src/jsx/ReactJSXElement.js, formats: [QT, AN] }
+      - { id: 03-first-render, title: createRoot and the first render, path_hint: packages/react-dom/src/client/ReactDOMRoot.js, formats: [QT, GT] }
+  - num: II
+    title: Fiber
+    chapters:
+      - { id: 04-fiber-node, title: Anatomy of a Fiber, path_hint: packages/react-reconciler/src/ReactFiber.js, formats: [AN] }
+      - { id: 05-work-loop, title: "The render phase: beginWork and completeWork", path_hint: packages/react-reconciler/src/ReactFiberWorkLoop.js, formats: [QT, GT] }
+      - { id: 06-reconciling-children, title: Reconciling children and keys, path_hint: packages/react-reconciler/src/ReactChildFiber.js, formats: [GT, SR] }
+  - num: III
+    title: Hooks
+    chapters:
+      - { id: 07-use-state, title: What setState does, path_hint: packages/react-reconciler/src/ReactFiberHooks.js, formats: [GT, SR] }
+      - { id: 08-use-effect, title: From useEffect to a running effect, path_hint: packages/react-reconciler/src/ReactFiberCommitEffects.js, formats: [QT, GT] }
+  - num: IV
+    title: Scheduling
+    chapters:
+      - { id: 09-lanes, title: Lanes and priorities, path_hint: packages/react-reconciler/src/ReactFiberLane.js, formats: [QT, AN] }
+      - { id: 10-scheduler, title: The Scheduler package, path_hint: packages/scheduler/src/forks/Scheduler.js, formats: [GT, SR] }
+  - num: V
+    title: Commit
+    chapters:
+      - { id: 11-commit, title: Committing to the DOM, path_hint: packages/react-reconciler/src/ReactFiberCommitWork.js, formats: [GT, AN] }
+      - { id: 12-events, title: Synthetic events, path_hint: packages/react-dom-bindings/src/events/, formats: [QT, SR] }

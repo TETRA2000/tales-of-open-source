@@ -1,0 +1,521 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "// ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "Keys at work: how a list of children is matched, moved and deleted"
+level: practitioner
+minutes: 14
+pin: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+example:
+  label: The re-render we follow
+  request: "<ul>{items.map(i => <li key={i.id}>…</li>)}</ul>, keys a, b, c → c, a"
+  target: "c kept in place, a flagged to move, b queued for deletion"
+steps:
+  - id: step-1
+    title: Two reconcilers, one algorithm
+    symbol: reconcileChildren
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberBeginWork.js
+    lines: 339-370
+    body: >-
+      Every beginWork that produces children ends here. mountChildFibers and reconcileChildFibers are the
+      same code built twice by createChildReconciler, once with shouldTrackSideEffects false and once true.
+      A brand-new subtree records no per-child effects, because its root will be inserted as a whole. Our
+      <ul> already exists, so its children are compared against current.child and every difference is
+      written down as a flag.
+    code: |
+      export function reconcileChildren(
+        current: Fiber | null,
+        workInProgress: Fiber,
+        nextChildren: any,
+        renderLanes: Lanes,
+      ) {
+        if (current === null) {
+          // If this is a fresh new component that hasn't been rendered yet, we
+          // won't update its child set by applying minimal side-effects. Instead,
+          // we will add them all to the child before it gets rendered. That means
+          // we can optimize this reconciliation pass by not tracking side-effects.
+          workInProgress.child = mountChildFibers(
+            workInProgress,
+            null,
+            nextChildren,
+            renderLanes,
+          );
+        } else {
+          // If the current child is the same as the work in progress, it means that
+          // we haven't yet started any work on these children. Therefore, we use
+          // the clone algorithm to create a copy of all the current children.
+
+          // If we had any progressed work already, that is invalid at this point so
+          // let's throw it out.
+          workInProgress.child = reconcileChildFibers(
+            workInProgress,
+            current.child,
+            nextChildren,
+            renderLanes,
+          );
+        }
+      }
+    next: reconcileChildFibers(ul, current.child, [<li c>, <li a>], lanes)
+  - id: step-2
+    title: What kind of children did render return?
+    symbol: reconcileChildFibersImpl
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 1854-1933
+    body: >-
+      A single element, a portal, a lazy value, an array, an iterable, a string: each shape has its own path.
+      An unkeyed top-level fragment is unwrapped first, so <>…</> costs nothing. items.map returned an array,
+      so the list algorithm takes over.
+    code: |
+      function reconcileChildFibersImpl(
+        returnFiber: Fiber,
+        currentFirstChild: Fiber | null,
+        newChild: any,
+        lanes: Lanes,
+      ): Fiber | null {
+        // ... comments on fragments and recursion
+        const isUnkeyedUnrefedTopLevelFragment =
+          typeof newChild === 'object' &&
+          newChild !== null &&
+          newChild.type === REACT_FRAGMENT_TYPE &&
+          newChild.key === null &&
+          (enableFragmentRefs ? newChild.props.ref === undefined : true);
+
+        if (isUnkeyedUnrefedTopLevelFragment) {
+          validateFragmentProps(newChild, null, returnFiber);
+          newChild = newChild.props.children;
+        }
+
+        // Handle object types
+        if (typeof newChild === 'object' && newChild !== null) {
+          switch (newChild.$$typeof) {
+            case REACT_ELEMENT_TYPE: {
+              const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+              const firstChild = placeSingleChild(
+                reconcileSingleElement(
+                  returnFiber,
+                  currentFirstChild,
+                  newChild,
+                  lanes,
+                ),
+              );
+              currentDebugInfo = prevDebugInfo;
+              return firstChild;
+            }
+            // ... portals and lazy children
+          }
+
+          if (isArray(newChild)) {
+            // We created a Fragment for this child with the debug info.
+            // No need to push again.
+            const firstChild = reconcileChildrenArray(
+              returnFiber,
+              currentFirstChild,
+              newChild,
+              lanes,
+            );
+            return firstChild;
+          }
+    next: reconcileChildrenArray(ul, a, [<li c>, <li a>], lanes)
+  - id: step-3
+    title: "Pass 1: walk both lists while the keys line up"
+    symbol: reconcileChildrenArray
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 1177-1264
+    body: >-
+      Old children are a linked list (child, then sibling), new children an array. The first pass steps
+      through both in lockstep and stops at the first slot whose key does not match. Fibers have no back
+      pointers, so there is no search from the end. Here it stops immediately: slot 0 holds old a but new c.
+    code: |
+      function reconcileChildrenArray(
+        returnFiber: Fiber,
+        currentFirstChild: Fiber | null,
+        newChildren: Array<any>,
+        lanes: Lanes,
+      ): Fiber | null {
+        // ... comment: no two-ended search, since fibers have no back pointers
+        let knownKeys: Set<string> | null = null;
+
+        let resultingFirstChild: Fiber | null = null;
+        let previousNewFiber: Fiber | null = null;
+
+        let oldFiber = currentFirstChild;
+        let lastPlacedIndex = 0;
+        let newIdx = 0;
+        let nextOldFiber = null;
+        for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+          if (oldFiber.index > newIdx) {
+            nextOldFiber = oldFiber;
+            oldFiber = null;
+          } else {
+            nextOldFiber = oldFiber.sibling;
+          }
+          const newFiber = updateSlot(
+            returnFiber,
+            oldFiber,
+            newChildren[newIdx],
+            lanes,
+          );
+          if (newFiber === null) {
+            // ... TODO comment
+            if (oldFiber === null) {
+              oldFiber = nextOldFiber;
+            }
+            break;
+          }
+          // ... DEV key warnings
+          if (shouldTrackSideEffects) {
+            if (oldFiber && newFiber.alternate === null) {
+              // We matched the slot, but we didn't reuse the existing fiber, so we
+              // need to delete the existing child.
+              deleteChild(returnFiber, oldFiber);
+            }
+          }
+          lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+          if (previousNewFiber === null) {
+            // TODO: Move out of the loop. This only happens for the first run.
+            resultingFirstChild = newFiber;
+          } else {
+            // ... TODO comment
+            previousNewFiber.sibling = newFiber;
+          }
+          previousNewFiber = newFiber;
+          oldFiber = nextOldFiber;
+        }
+    next: updateSlot(ul, oldFiber a, <li key="c">, lanes)
+  - id: step-4
+    title: A slot matches only if the keys are equal
+    symbol: updateSlot
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 842-893
+    body: >-
+      Returning null is the signal “this slot does not match; stop pass 1”. Keys are compared first; the
+      type is only checked afterwards, inside updateElement. Unkeyed children have key null on both sides,
+      which is why a list without keys matches purely by position.
+    code: |
+      function updateSlot(
+        returnFiber: Fiber,
+        oldFiber: Fiber | null,
+        newChild: any,
+        lanes: Lanes,
+      ): Fiber | null {
+        // Update the fiber if the keys match, otherwise return null.
+        const key = oldFiber !== null ? oldFiber.key : null;
+        // ... text children only match an unkeyed slot
+        if (typeof newChild === 'object' && newChild !== null) {
+          switch (newChild.$$typeof) {
+            case REACT_ELEMENT_TYPE: {
+              if (
+                // ... comment on optimistic keys
+                newChild.key === key
+              ) {
+                const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+                const updated = updateElement(
+                  returnFiber,
+                  oldFiber,
+                  newChild,
+                  lanes,
+                );
+                currentDebugInfo = prevDebugInfo;
+                return updated;
+              } else {
+                return null;
+              }
+            }
+    next: back in reconcileChildrenArray, newIdx 0, oldFiber a
+  - id: step-5
+    title: The two cheap endings
+    symbol: reconcileChildrenArray
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 1266-1306
+    body: >-
+      Many updates end here. If the new list ran out, whatever is left of the old one is deleted
+      (removing items from the end). If the old list ran out, the rest are insertions (appending items).
+      Our list stopped at slot 0 with both lists still going, so neither applies.
+    code: |
+      if (newIdx === newChildren.length) {
+        // We've reached the end of the new children. We can delete the rest.
+        deleteRemainingChildren(returnFiber, oldFiber);
+        // ... hydration fork bookkeeping
+        return resultingFirstChild;
+      }
+
+      if (oldFiber === null) {
+        // If we don't have any more existing children we can choose a fast path
+        // since the rest will all be insertions.
+        for (; newIdx < newChildren.length; newIdx++) {
+          const newFiber = createChild(returnFiber, newChildren[newIdx], lanes);
+          if (newFiber === null) {
+            continue;
+          }
+          // ... DEV key warnings
+          lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+          // ... link into the sibling list
+        }
+        // ... hydration fork bookkeeping
+        return resultingFirstChild;
+      }
+    next: mapRemainingChildren(oldFiber a)
+  - id: step-6
+    title: The rest of the old list goes into a Map
+    symbol: mapRemainingChildren
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 467-500
+    body: >-
+      Keyed children are stored by key, unkeyed ones by their old index. For our list the map is
+      {a → fiber a, b → fiber b, c → fiber c}. This is the moment keys pay off: without them, an item that
+      moved could only be found at its old index.
+    code: |
+      function mapRemainingChildren(
+        currentFirstChild: Fiber,
+      ): Map<string | number | ReactOptimisticKey, Fiber> {
+        // Add the remaining children to a temporary map so that we can find them by
+        // keys quickly. Implicit (null) keys get added to this set with their index
+        // instead.
+        const existingChildren: Map<
+          // ... string | number | ReactOptimisticKey
+          Fiber,
+        > = new Map();
+
+        let existingChild: null | Fiber = currentFirstChild;
+        while (existingChild !== null) {
+          if (existingChild.key === null) {
+            existingChildren.set(existingChild.index, existingChild);
+          } else if (
+            enableOptimisticKey &&
+            existingChild.key === REACT_OPTIMISTIC_KEY
+          ) {
+            // ... optimistic keys are stored under a negative index
+            existingChildren.set(-existingChild.index - 1, existingChild);
+          } else {
+            existingChildren.set(existingChild.key, existingChild);
+          }
+          existingChild = existingChild.sibling;
+        }
+        return existingChildren;
+      }
+    next: "Pass 2: for each new child, look it up in the map"
+  - id: step-7
+    title: "Pass 2: look up, place, and cross off"
+    symbol: reconcileChildrenArray
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 1308-1362
+    body: >-
+      Each new child is looked up by key. When an old fiber is reused, its entry is removed from the map,
+      so after the loop the map holds exactly the children that disappeared: here, b. Each of those is
+      handed to deleteChild.
+    code: |
+      // Add all children to a key map for quick lookups.
+      const existingChildren = mapRemainingChildren(oldFiber);
+
+      // Keep scanning and use the map to restore deleted items as moves.
+      for (; newIdx < newChildren.length; newIdx++) {
+        const newFiber = updateFromMap(
+          existingChildren,
+          returnFiber,
+          newIdx,
+          newChildren[newIdx],
+          lanes,
+        );
+        if (newFiber !== null) {
+          // ... DEV key warnings
+          if (shouldTrackSideEffects) {
+            const currentFiber = newFiber.alternate;
+            if (currentFiber !== null) {
+              // The new fiber is a work in progress, but if there exists a
+              // current, that means that we reused the fiber. We need to delete
+              // it from the child list so that we don't add it to the deletion
+              // list.
+              if (
+                enableOptimisticKey &&
+                currentFiber.key === REACT_OPTIMISTIC_KEY
+              ) {
+                existingChildren.delete(-newIdx - 1);
+              } else {
+                existingChildren.delete(
+                  currentFiber.key === null ? newIdx : currentFiber.key,
+                );
+              }
+            }
+          }
+          lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
+          // ... link into the sibling list
+          previousNewFiber = newFiber;
+        }
+      }
+
+      if (shouldTrackSideEffects) {
+        // Any existing children that weren't consumed above were deleted. We need
+        // to add them to the deletion list.
+        existingChildren.forEach(child => deleteChild(returnFiber, child));
+      }
+    next: updateFromMap(map, ul, 0, <li key="c">, lanes)
+  - id: step-8
+    title: Find the old fiber by key
+    symbol: updateFromMap
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 985-1029
+    body: >-
+      The lookup uses the key when there is one and the new index when there is not. Whatever it finds —
+      or null — goes to updateElement, which decides between reusing that fiber and creating a new one.
+    code: |
+      function updateFromMap(
+        existingChildren: Map<string | number | ReactOptimisticKey, Fiber>,
+        returnFiber: Fiber,
+        newIdx: number,
+        newChild: any,
+        lanes: Lanes,
+      ): Fiber | null {
+        // ... text children match by index
+        if (typeof newChild === 'object' && newChild !== null) {
+          switch (newChild.$$typeof) {
+            case REACT_ELEMENT_TYPE: {
+              const matchedFiber =
+                existingChildren.get(
+                  newChild.key === null ? newIdx : newChild.key,
+                ) ||
+                (enableOptimisticKey &&
+                  // If the existing child was an optimistic key, we may still match on the index.
+                  existingChildren.get(-newIdx - 1)) ||
+                null;
+              const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
+              const updated = updateElement(
+                returnFiber,
+                matchedFiber,
+                newChild,
+                lanes,
+              );
+              currentDebugInfo = prevDebugInfo;
+              return updated;
+            }
+    next: updateElement(ul, fiber c, <li key="c">, lanes)
+  - id: step-9
+    title: Same type means reuse; anything else means a new fiber
+    symbol: updateElement
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 580-636
+    body: >-
+      Old c is an li and new c is an li, so the fiber is reused: useFiber calls createWorkInProgress, which
+      keeps the DOM node in stateNode and links the pair through alternate. A different type under the same
+      key creates a fresh fiber, and the caller deletes the old one — state inside it is lost.
+    code: |
+      function updateElement(
+        returnFiber: Fiber,
+        current: Fiber | null,
+        element: ReactElement,
+        lanes: Lanes,
+      ): Fiber {
+        const elementType = element.type;
+        if (elementType === REACT_FRAGMENT_TYPE) {
+          // ... fragments reconcile their children in place
+        }
+        if (current !== null) {
+          if (
+            current.elementType === elementType ||
+            // ... hot reloading and lazy types
+          ) {
+            // Move based on index
+            const existing = useFiber(current, element.props);
+            coerceRef(existing, element);
+            existing.return = returnFiber;
+            // ... DEV owner info
+            return existing;
+          }
+        }
+        // Insert
+        const created = createFiberFromElement(element, returnFiber.mode, lanes);
+        coerceRef(created, element);
+        created.return = returnFiber;
+        // ... DEV debug info
+        return created;
+      }
+    next: placeChild(fiber c, lastPlacedIndex 0, newIdx 0)
+  - id: step-10
+    title: Only fibers that fall behind lastPlacedIndex move
+    symbol: placeChild
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 511-541
+    body: >-
+      lastPlacedIndex is the highest old index kept in place so far. c came from old index 2, which is not
+      behind 0, so it stays and lastPlacedIndex becomes 2. Then a, from old index 0, is behind 2 and gets
+      Placement — a move. React keeps c still and moves a after it, rather than moving c to the front: moving
+      the last item to the first position costs one move per item that was before it.
+    code: |
+      function placeChild(
+        newFiber: Fiber,
+        lastPlacedIndex: number,
+        newIndex: number,
+      ): number {
+        newFiber.index = newIndex;
+        if (!shouldTrackSideEffects) {
+          // During hydration, the useId algorithm needs to know which fibers are
+          // part of a list of children (arrays, iterators).
+          newFiber.flags |= Forked;
+          return lastPlacedIndex;
+        }
+        const current = newFiber.alternate;
+        if (current !== null) {
+          const oldIndex = current.index;
+          if (oldIndex < lastPlacedIndex) {
+            // This is a move. The fiber already existed, so this is not a new
+            // mount; don't set PlacementDEV, which would cause StrictMode to
+            // re-run the effects in its subtree as if it had remounted.
+            newFiber.flags |= Placement;
+            return lastPlacedIndex;
+          } else {
+            // This item can stay in place.
+            return oldIndex;
+          }
+        } else {
+          // This is an insertion.
+          newFiber.flags |= Placement | PlacementDEV;
+          return lastPlacedIndex;
+        }
+      }
+    next: "existingChildren.forEach(child => deleteChild(ul, child)) — b is left"
+  - id: step-11
+    title: Deletions are recorded on the parent
+    symbol: deleteChild
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactChildFiber.js
+    lines: 431-446
+    body: >-
+      b has no fiber in the new tree, so there is nothing to put a flag on. Instead it goes into the parent's
+      deletions array and the ul is flagged ChildDeletion. In the commit phase, deletions of a parent are
+      processed before its children's own effects; then a's Placement moves its li to the end.
+    code: |
+      function createChildReconciler(
+        shouldTrackSideEffects: boolean,
+      ): ChildReconciler {
+        function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
+          if (!shouldTrackSideEffects) {
+            // Noop.
+            return;
+          }
+          const deletions = returnFiber.deletions;
+          if (deletions === null) {
+            returnFiber.deletions = [childToDelete];
+            returnFiber.flags |= ChildDeletion;
+          } else {
+            deletions.push(childToDelete);
+          }
+        }
+    next: "commit: remove b's <li>, then insert a's <li> after c's"
+tracked_symbols:
+  - { symbol: reconcileChildren, file: packages/react-reconciler/src/ReactFiberBeginWork.js, used_in: step-1 }
+  - { symbol: reconcileChildFibersImpl, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-2 }
+  - { symbol: reconcileChildrenArray, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-3 }
+  - { symbol: updateSlot, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-4 }
+  - { symbol: mapRemainingChildren, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-6 }
+  - { symbol: updateFromMap, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-8 }
+  - { symbol: updateElement, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-9 }
+  - { symbol: placeChild, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-10 }
+  - { symbol: deleteChild, file: packages/react-reconciler/src/ReactChildFiber.js, used_in: step-11 }
