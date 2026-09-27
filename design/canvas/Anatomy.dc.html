@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Anatomy — the Fiber node</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#222838;color:#EEE9DF}
+a{color:#6CC8D6}a:hover{color:#A0DEE8}
+code{font-family:'IBM Plex Mono',monospace;font-size:0.88em;background:#2C3346;padding:1px 5px;border-radius:3px}
+</style>
+</helmet>
+<div style="width: 1280px; height: 2140px; box-sizing: border-box; background: #222838; color: #EEE9DF; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+<header style="display: flex; justify-content: space-between; align-items: center; padding: 20px 72px; background: #2C3346; border-bottom: 1px solid #3D4660; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; color: #A9AFC2">
+<a href="Main.dc.html" style="color: #EEE9DF; text-decoration: none; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase">Tales of Open Source</a>
+<span aria-hidden="true">/</span><span>React, in depth</span><span aria-hidden="true">/</span><span>II · The Fiber tree</span>
+</div>
+<div role="group" aria-label="Formats of this chapter" style="display: flex; gap: 4px; padding: 3px; background: #2C3346; border-radius: 99px">
+<a href="#" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Quick Tale</a>
+<a href="Anatomy.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 99px; background: #EEE9DF; color: #222838; text-decoration: none">Anatomy</a>
+<a href="#" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Guided Trace</a>
+</div>
+</header>
+
+<section style="padding: 72px 72px 48px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; align-items: end">
+<div style="grid-column: span 8; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; align-items: center; gap: 12px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #6CC8D6; font-weight: 600"><span style="width: 10px; height: 10px; border-radius: 2px; background: #6CC8D6"></span>Anatomy · React</div>
+<h1 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 76px; line-height: 1; font-weight: 500; letter-spacing: -0.015em">Anatomy of a Fiber</h1>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 22px; line-height: 1.5; color: #D3D0CA; text-wrap: pretty">Every component you render gets one plain JavaScript object that React keeps between renders. Here is every field, grouped by the job it does.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px">●●○ Practitioner</span>
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px">10 min</span>
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px; font-family: 'IBM Plex Mono', monospace">packages/react-reconciler/src/ReactFiber.js</span>
+</div>
+</div>
+</section>
+
+<section style="margin: 0 72px; padding: 48px; background: #2E3549; border: 1px solid #3D4660; border-radius: 8px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 32px">
+<div style="grid-column: span 5; display: flex; flex-direction: column; border: 2px solid #EEE9DF; border-radius: 6px; overflow: hidden; align-self: start">
+<div style="padding: 14px 18px; background: #EEE9DF; color: #222838; font-family: 'IBM Plex Mono', monospace; font-size: 15px">FiberNode</div>
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="7">
+<div style="display: grid; grid-template-columns: 36px minmax(0, 1fr); border-top: 1px solid #3D4660">
+<div style="display: flex; align-items: center; justify-content: center; background: #26455A; color: #6CC8D6; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600">{{g.k}}</div>
+<div style="display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 14px">
+<sc-for list="{{g.fields}}" as="f" hint-placeholder-count="4"><span>{{f}}</span></sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+<div style="grid-column: 6 / span 7; display: flex; flex-direction: column">
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="7">
+<div style="display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 14px; padding: 14px 0; border-bottom: 1px solid #3D4660">
+<span style="width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid #6CC8D6; color: #6CC8D6; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600">{{g.k}}</span>
+<div style="display: flex; flex-direction: column; gap: 4px"><div style="font-size: 16px; font-weight: 600">{{g.name}}</div><div style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 17px; line-height: 1.5; color: #D3D0CA">{{g.what}}</div></div>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="padding: 72px 72px 0; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px">
+<div style="grid-column: span 4; display: flex; flex-direction: column; gap: 16px">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; font-weight: 500; line-height: 1.1">Three pointers make a tree</h2>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 18px; line-height: 1.6; color: #D3D0CA">A fiber points only to its <strong>first</strong> child. Brothers and sisters hang off <code>sibling</code>, and everyone can climb back up through <code>return</code>. That shape lets the work loop walk the tree without recursion — and pause anywhere.</p>
+<pre style="margin: 0; padding: 16px 18px; background: #EEE9DF; color: #222838; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 14px; line-height: 1.7; white-space: pre">{{jsx}}</pre>
+</div>
+<figure style="grid-column: 6 / span 7; margin: 0; display: flex; flex-direction: column; gap: 12px">
+<svg width="680" height="420" viewBox="0 0 680 420" role="img" aria-label="Fiber tree for App with Header and List; List has two Items. Solid arrows are child and sibling, dashed arrows are return.">
+<defs>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#EEE9DF"></path></marker>
+<marker id="ahr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#6CC8D6"></path></marker>
+</defs>
+<g font-family="IBM Plex Mono, monospace" font-size="15" text-anchor="middle">
+<rect x="60" y="30" width="140" height="52" rx="6" fill="#EEE9DF"></rect><text x="130" y="61" fill="#222838">App</text>
+<rect x="60" y="170" width="140" height="52" rx="6" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></rect><text x="130" y="201" fill="#EEE9DF">Header</text>
+<rect x="300" y="170" width="140" height="52" rx="6" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></rect><text x="370" y="201" fill="#EEE9DF">List</text>
+<rect x="300" y="320" width="140" height="52" rx="6" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></rect><text x="370" y="351" fill="#EEE9DF">Item</text>
+<rect x="520" y="320" width="140" height="52" rx="6" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></rect><text x="590" y="351" fill="#EEE9DF">Item</text>
+</g>
+<g stroke="#EEE9DF" stroke-width="2" fill="none">
+<path d="M110 82 L110 168" marker-end="url(#ah)"></path>
+<path d="M200 196 L298 196" marker-end="url(#ah)"></path>
+<path d="M350 222 L350 318" marker-end="url(#ah)"></path>
+<path d="M440 346 L518 346" marker-end="url(#ah)"></path>
+</g>
+<g stroke="#6CC8D6" stroke-width="1.6" fill="none" stroke-dasharray="5 5">
+<path d="M150 168 L150 84" marker-end="url(#ahr)"></path>
+<path d="M340 168 C 300 110, 240 70, 202 60" marker-end="url(#ahr)"></path>
+<path d="M390 318 L390 224" marker-end="url(#ahr)"></path>
+<path d="M590 318 C 590 260, 480 210, 442 202" marker-end="url(#ahr)"></path>
+</g>
+<g font-family="IBM Plex Sans, sans-serif" font-size="13">
+<text x="100" y="130" text-anchor="end" fill="#EEE9DF">child</text>
+<text x="249" y="188" text-anchor="middle" fill="#EEE9DF">sibling</text>
+<text x="340" y="275" text-anchor="end" fill="#EEE9DF">child</text>
+<text x="479" y="338" text-anchor="middle" fill="#EEE9DF">sibling</text>
+<text x="160" y="130" fill="#6CC8D6">return</text>
+<text x="400" y="275" fill="#6CC8D6">return</text>
+</g>
+</svg>
+<figcaption style="display: flex; gap: 24px; font-size: 13px; color: #D3D0CA">
+<span style="display: flex; align-items: center; gap: 8px"><span style="width: 28px; height: 2px; background: #EEE9DF"></span>child / sibling — the way down and across</span>
+<span style="display: flex; align-items: center; gap: 8px"><span style="width: 28px; height: 0; border-top: 2px dashed #6CC8D6"></span>return — the way back up</span>
+</figcaption>
+</figure>
+</section>
+
+<section style="margin: 72px 72px 0; padding-top: 40px; border-top: 1px solid #3D4660; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px">
+<div style="grid-column: span 4; display: flex; flex-direction: column; gap: 16px">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; font-weight: 500; line-height: 1.1">Two trees, one screen</h2>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 18px; line-height: 1.6; color: #D3D0CA">React keeps the tree on screen (<code>current</code>) and builds the next one beside it (<code>workInProgress</code>). Each fiber’s <code>alternate</code> points at its twin. On commit, the root simply swaps which tree is current.</p>
+</div>
+<div style="grid-column: 6 / span 7; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border: 1px solid #EEE9DF; border-radius: 6px; overflow: hidden">
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 10px; border-right: 1px dashed #6CC8D6">
+<div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2; font-weight: 600">current · on screen</div>
+<sc-for list="{{twins}}" as="t" hint-placeholder-count="3"><div style="padding: 10px 14px; border: 1px solid #EEE9DF; border-radius: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 14px; background: #2E3549">{{t}}</div></sc-for>
+</div>
+<div style="padding: 20px; display: flex; flex-direction: column; gap: 10px; background: #26455A">
+<div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #6CC8D6; font-weight: 600">workInProgress · being built</div>
+<sc-for list="{{twins}}" as="t" hint-placeholder-count="3"><div style="padding: 10px 14px; border: 1px solid #6CC8D6; border-radius: 4px; font-family: 'IBM Plex Mono', monospace; font-size: 14px; background: #2E3549; display: flex; justify-content: space-between"><span>{{t}}</span><span style="color: #6CC8D6">⇄ alternate</span></div></sc-for>
+</div>
+</div>
+</section>
+
+<section style="margin: 72px 72px 0; padding-top: 40px; border-top: 1px solid #3D4660; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 30px; font-weight: 500">Tags you will meet first</h2>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #A9AFC2">ReactWorkTags.js</span>
+</div>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+<sc-for list="{{tags}}" as="t" hint-placeholder-count="6">
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid #3D4660; border-radius: 6px; background: #2E3549">
+<span style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; line-height: 1; color: #6CC8D6">{{t.v}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px">{{t.name}}</span>
+<span style="font-size: 13px; color: #A9AFC2">{{t.eg}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":2140}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      groups: [
+        { k: 'ID', name: 'Identity', fields: ['tag', 'key', 'elementType', 'type', 'stateNode'], what: 'What this fiber is: a work tag (function, host element, text…), the component function or tag name, and the DOM node or class instance it owns.' },
+        { k: 'TR', name: 'Tree links', fields: ['return', 'child', 'sibling', 'index'], what: 'Pointers to parent, first child and next sibling. index is its position among siblings, used when diffing lists.' },
+        { k: 'IN', name: 'Inputs and state', fields: ['pendingProps', 'memoizedProps', 'updateQueue', 'memoizedState', 'dependencies'], what: 'Props coming in versus props last rendered with. For function components, memoizedState is the head of the hooks list.' },
+        { k: 'EF', name: 'Effects', fields: ['flags', 'subtreeFlags', 'deletions'], what: 'Bit flags saying what the commit phase must do here (place, update, delete…) and whether anything below needs work.' },
+        { k: 'LN', name: 'Scheduling', fields: ['lanes', 'childLanes'], what: 'Bitmasks of pending update priorities on this fiber and anywhere in its subtree. Empty lanes let React skip whole branches.' },
+        { k: 'MD', name: 'Mode and refs', fields: ['mode', 'ref', 'refCleanup'], what: 'Inherited mode bits (concurrent, strict, profiling) and the ref to attach after commit.' },
+        { k: 'AL', name: 'Double buffering', fields: ['alternate'], what: 'The same component’s fiber in the other tree. React renders into one while the other is on screen.' }
+      ],
+      jsx: ['<App>', '  <Header />', '  <List>', '    <Item />', '    <Item />', '  </List>', '</App>'].join('\n'),
+      twins: ['App', 'List', 'Item'],
+      tags: [
+        { v: '0', name: 'FunctionComponent', eg: 'function App()' },
+        { v: '1', name: 'ClassComponent', eg: 'class App extends …' },
+        { v: '3', name: 'HostRoot', eg: 'createRoot(el)' },
+        { v: '5', name: 'HostComponent', eg: '<div>' },
+        { v: '6', name: 'HostText', eg: '"hello"' },
+        { v: '7', name: 'Fragment', eg: '<>…</>' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+# Seed content from the design prototype.
+# VERIFY every `code` excerpt against the pinned rails/rails commit before publishing.
+format: GT
+title: "From socket to controller: the path of one request"
+level: practitioner
+minutes: 12
+pin: "[SHA]"
+example:
+  request: GET /articles/42
+  target: ArticlesController#show
+steps:
+  - id: step-1
+    title: Puma hands Rails a Rack env
+    symbol: config.ru
+    package: your app
+    file: config.ru
+    body: >-
+      The web server parses raw HTTP into a plain Ruby hash — the Rack env — and calls
+      #call on whatever object config.ru runs. In every Rails app, that object is Rails.application.
+    code: |
+      require_relative "config/environment"
+
+      run Rails.application
+      Rails.application.load_server
+    next: Rails.application.call(env)
+  - id: step-2
+    title: The application object answers #call
+    symbol: Rails::Engine#call
+    package: railties
+    file: railties/lib/rails/engine.rb
+    body: >-
+      Rails::Application inherits #call from Rails::Engine. It wraps the env in a request object,
+      then passes it to app — not your app, but the middleware stack Rails built at boot.
+    code: |
+      def call(env)
+        req = build_request env
+        app.call req.env
+      end
+    next: app → the first middleware
+  - id: step-3
+    title: Through the middleware stack
+    symbol: DefaultMiddlewareStack#build_stack
+    package: railties
+    file: railties/lib/rails/application/default_middleware_stack.rb
+    body: >-
+      Each middleware is an object with #call that does a little work and calls the next one:
+      host checks, static files, the executor, cookies, sessions, flash. The last link in the chain is the router.
+    code: |
+      def build_stack
+        ActionDispatch::MiddlewareStack.new do |middleware|
+          # host authorization, static files, executor ...
+          middleware.use ::Rack::MethodOverride unless config.api_only
+          # cookies, session, flash, ETag ...
+        end
+      end
+    next: Rails.application.routes.call(env)
+  - id: step-4
+    title: The route set normalises the path
+    symbol: RouteSet#call
+    package: actionpack
+    file: actionpack/lib/action_dispatch/routing/route_set.rb
+    body: >-
+      routes.rb compiled into a RouteSet at boot. Its #call builds an ActionDispatch::Request,
+      tidies the path, and hands the request to the Journey router — the engine that actually matches URLs.
+    code: |
+      def call(env)
+        req = make_request(env)
+        req.path_info = Journey::Router::Utils.normalize_path(req.path_info)
+        @router.serve(req)
+      end
+    next: Journey::Router#serve(req)
+  - id: step-5
+    title: Journey finds the matching route
+    symbol: Journey::Router#serve
+    package: actionpack
+    file: actionpack/lib/action_dispatch/journey/router.rb
+    body: >-
+      find_routes walks the compiled route table. For /articles/42 it yields the articles#show route
+      plus the captured parameters, which are merged into path_parameters — this is where params[:id] is born.
+    code: |
+      def serve(req)
+        find_routes(req) do |match, parameters, route|
+          set_params = req.path_parameters
+          # ... script_name / path_info bookkeeping ...
+          tmp_params = set_params.merge route.defaults
+          parameters.each_pair { |key, val|
+            tmp_params[key] = val.force_encoding(::Encoding::UTF_8)
+          }
+          req.path_parameters = tmp_params
+
+          _, headers, _ = response = route.app.serve(req)
+          # ... X-Cascade handling ...
+        end
+      end
+    next: route.app.serve(req) → Dispatcher
+  - id: step-6
+    title: The dispatcher picks a controller
+    symbol: RouteSet::Dispatcher#serve
+    package: actionpack
+    file: actionpack/lib/action_dispatch/routing/route_set.rb
+    body: >-
+      The route's endpoint is a Dispatcher. It turns "articles" into ArticlesController, asks the
+      controller class for a fresh response, and calls dispatch with the action name.
+    code: |
+      def serve(req)
+        params     = req.path_parameters
+        controller = controller req
+        res        = controller.make_response! req
+        dispatch(controller, params[:action], req, res)
+      rescue ActionController::RoutingError
+        # ...
+      end
+    next: ArticlesController.dispatch("show", req, res)
+  - id: step-7
+    title: Metal sets up request and response
+    symbol: ActionController::Metal#dispatch
+    package: actionpack
+    file: actionpack/lib/action_controller/metal.rb
+    body: >-
+      A new controller instance is created for every request. dispatch stores the request and response
+      on it, runs process, commits the flash, and finally returns the Rack triple [status, headers, body].
+    code: |
+      def dispatch(name, request, response) # :nodoc:
+        set_request!(request)
+        set_response!(response)
+        process(name)
+        request.commit_flash
+        to_a
+      end
+    next: AbstractController::Base#process("show")
+  - id: step-8
+    title: Callbacks, your action, the render
+    symbol: AbstractController::Base#process
+    package: actionpack
+    file: actionpack/lib/abstract_controller/base.rb
+    body: >-
+      process finds the method, then process_action runs your before_action callbacks around it.
+      The action is called with send; if it did not render or redirect, ImplicitRender calls
+      default_render — show.html.erb.
+    code: |
+      def process(action, ...)
+        @_action_name = action.to_s
+
+        unless action_name = _find_action_name(@_action_name)
+          raise ActionNotFound.new(...)
+        end
+
+        @_response_body = nil
+
+        process_action(action_name, ...)
+      end
+    next: ArticlesController#show → ActionView
+tracked_symbols:
+  - { symbol: "Rails::Engine#call", file: railties/lib/rails/engine.rb, used_in: step-2 }
+  - { symbol: "DefaultMiddlewareStack#build_stack", file: railties/lib/rails/application/default_middleware_stack.rb, used_in: step-3 }
+  - { symbol: "RouteSet#call", file: actionpack/lib/action_dispatch/routing/route_set.rb, used_in: step-4 }
+  - { symbol: "Journey::Router#serve", file: actionpack/lib/action_dispatch/journey/router.rb, used_in: step-5 }
+  - { symbol: "RouteSet::Dispatcher#serve", file: actionpack/lib/action_dispatch/routing/route_set.rb, used_in: step-6 }
+  - { symbol: "ActionController::Metal#dispatch", file: actionpack/lib/action_controller/metal.rb, used_in: step-7 }
+  - { symbol: "AbstractController::Base#process", file: actionpack/lib/abstract_controller/base.rb, used_in: step-8 }

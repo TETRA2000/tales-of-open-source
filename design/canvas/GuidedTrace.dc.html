@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Guided Trace — One Rails request</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#222838;color:#EEE9DF}
+a{color:#F28B6D}a:hover{color:#F7AE97}
+button{font:inherit}
+</style>
+</helmet>
+<div style="width: 1280px; height: 1400px; box-sizing: border-box; background: #222838; color: #EEE9DF; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+<header style="display: flex; justify-content: space-between; align-items: center; padding: 20px 72px; background: #2C3346; border-bottom: 1px solid #3D4660; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; color: #A9AFC2">
+<a href="Main.dc.html" style="color: #EEE9DF; text-decoration: none; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase">Tales of Open Source</a>
+<span aria-hidden="true">/</span><a href="SetHome.dc.html" style="color: #A9AFC2">Ruby on Rails, in depth</a><span aria-hidden="true">/</span><span>II · Request lifecycle</span>
+</div>
+<div role="group" aria-label="Formats of this chapter" style="display: flex; gap: 4px; padding: 3px; background: #2C3346; border-radius: 99px">
+<a href="#" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Quick Tale</a>
+<a href="GuidedTrace.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 99px; background: #EEE9DF; color: #222838; text-decoration: none">Guided Trace</a>
+<a href="RevisionNote.dc.html" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Revision Note</a>
+</div>
+</header>
+
+<section style="padding: 56px 72px 40px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; align-items: end">
+<div style="grid-column: span 8; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #F28B6D; font-weight: 600"><span style="width: 10px; height: 10px; border-radius: 2px; background: #F28B6D"></span>Guided Trace · Ruby on Rails</div>
+<h1 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 56px; line-height: 1.04; font-weight: 500; letter-spacing: -0.01em">From socket to controller: the path of one request</h1>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px">●●○ Practitioner</span>
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px">12 min</span>
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px; font-family: 'IBM Plex Mono', monospace">rails/rails @ [SHA]</span>
+<a href="RevisionNote.dc.html" style="padding: 5px 10px; background: #A2481F; color: #EEE9DF; border-radius: 99px; font-weight: 500; text-decoration: none">Drifted · see Revision Note</a>
+</div>
+</div>
+<div style="grid-column: 9 / span 4; padding: 18px 20px; background: #EEE9DF; color: #222838; border-radius: 6px; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #565C70">The request we follow</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 15px">GET /articles/42</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #565C70">→ ArticlesController#show</div>
+</div>
+</section>
+
+<div style="margin: 0 72px; height: 4px; background: #3D4660; border-radius: 2px; display: flex">
+<div style="height: 4px; background: #F28B6D; border-radius: 2px; width: {{progress}}"></div>
+</div>
+
+<section style="padding: 32px 72px 64px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; flex-grow: 1">
+<nav aria-label="Steps" style="grid-column: span 4; display: flex; flex-direction: column; gap: 2px">
+<sc-for list="{{steps}}" as="s" hint-placeholder-count="8">
+<button type="button" onClick="{{s.pick}}" style="{{s.rowStyle}}">
+<span style="{{s.numStyle}}">{{s.n}}</span>
+<span style="display: flex; flex-direction: column; gap: 2px; text-align: left">
+<span style="font-size: 15px; font-weight: 600">{{s.title}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9AFC2">{{s.symbol}}</span>
+</span>
+</button>
+</sc-for>
+</nav>
+
+<div style="grid-column: 5 / span 8; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<div style="font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2">Step {{cur.n}} of 8 · {{cur.gem}}</div>
+<div style="display: flex; gap: 8px">
+<button type="button" onClick="{{prev}}" aria-label="Previous step" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: 1px solid #EEE9DF; background: transparent; border-radius: 99px; cursor: pointer; color: #EEE9DF"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg></button>
+<button type="button" onClick="{{next}}" aria-label="Next step" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: none; background: #EEE9DF; border-radius: 99px; cursor: pointer; color: #222838"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"></path></svg></button>
+</div>
+</div>
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 38px; font-weight: 500; line-height: 1.1">{{cur.title}}</h2>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 20px; line-height: 1.6; color: #E2DED7; text-wrap: pretty">{{cur.body}}</p>
+
+<div style="display: flex; flex-direction: column; border: 1px solid #EEE9DF; border-radius: 6px; overflow: hidden">
+<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #EEE9DF; color: #222838; font-size: 13px">
+<span style="font-family: 'IBM Plex Mono', monospace">{{cur.file}}</span>
+<a href="{{cur.url}}" style="color: #9A3A26; font-size: 12px">View on GitHub at pin</a>
+</div>
+<pre style="margin: 0; padding: 20px; background: #2E3549; font-family: 'IBM Plex Mono', monospace; font-size: 14px; line-height: 1.7; white-space: pre; overflow: hidden">{{cur.code}}</pre>
+</div>
+
+<div style="display: flex; align-items: center; gap: 14px; padding: 16px 20px; background: #2C3346; border-radius: 6px; font-size: 14px">
+<span style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2; font-weight: 600; white-space: nowrap">Hands off to</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">{{cur.next}}</span>
+</div>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1400}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { step: 0 }; }
+  renderVals() {
+    const data = [
+      { title: 'Puma hands Rails a Rack env', symbol: 'config.ru', gem: 'your app', file: 'config.ru (generated app)',
+        body: 'The web server parses raw HTTP into a plain Ruby hash — the Rack env — and calls #call on whatever object config.ru runs. In every Rails app, that object is Rails.application.',
+        code: ['require_relative "config/environment"', '', 'run Rails.application', 'Rails.application.load_server'].join('\n'),
+        next: 'Rails.application.call(env)' },
+      { title: 'The application object answers #call', symbol: 'Rails::Engine#call', gem: 'railties', file: 'railties/lib/rails/engine.rb',
+        body: 'Rails::Application inherits #call from Rails::Engine. It wraps the env in a request object, then passes it to app — not your app, but the middleware stack Rails built at boot.',
+        code: ['def call(env)', '  req = build_request env', '  app.call req.env', 'end'].join('\n'),
+        next: 'app → the first middleware' },
+      { title: 'Through the middleware stack', symbol: 'DefaultMiddlewareStack#build_stack', gem: 'railties', file: 'railties/lib/rails/application/default_middleware_stack.rb',
+        body: 'Each middleware is an object with #call that does a little work and calls the next one: host checks, static files, the executor, cookies, sessions, flash. The last link in the chain is the router.',
+        code: ['def build_stack', '  ActionDispatch::MiddlewareStack.new do |middleware|', '    # host authorization, static files, executor ...', '    middleware.use ::Rack::MethodOverride unless config.api_only', '    # cookies, session, flash, ETag ...', '  end', 'end'].join('\n'),
+        next: 'Rails.application.routes.call(env)' },
+      { title: 'The route set normalises the path', symbol: 'RouteSet#call', gem: 'actionpack', file: 'actionpack/lib/action_dispatch/routing/route_set.rb',
+        body: 'routes.rb compiled into a RouteSet at boot. Its #call builds an ActionDispatch::Request, tidies the path, and hands the request to the Journey router — the engine that actually matches URLs.',
+        code: ['def call(env)', '  req = make_request(env)', '  req.path_info = Journey::Router::Utils.normalize_path(req.path_info)', '  @router.serve(req)', 'end'].join('\n'),
+        next: 'Journey::Router#serve(req)' },
+      { title: 'Journey finds the matching route', symbol: 'Journey::Router#serve', gem: 'actionpack', file: 'actionpack/lib/action_dispatch/journey/router.rb',
+        body: 'find_routes walks the compiled route table. For /articles/42 it yields the articles#show route plus the captured parameters, which are merged into path_parameters — this is where params[:id] is born.',
+        code: ['def serve(req)', '  find_routes(req) do |match, parameters, route|', '    set_params = req.path_parameters', '    # ... script_name / path_info bookkeeping ...', '    tmp_params = set_params.merge route.defaults', '    parameters.each_pair { |key, val|', '      tmp_params[key] = val.force_encoding(::Encoding::UTF_8)', '    }', '    req.path_parameters = tmp_params', '', '    _, headers, _ = response = route.app.serve(req)', '    # ... X-Cascade handling ...', '  end', 'end'].join('\n'),
+        next: 'route.app.serve(req) → Dispatcher' },
+      { title: 'The dispatcher picks a controller', symbol: 'RouteSet::Dispatcher#serve', gem: 'actionpack', file: 'actionpack/lib/action_dispatch/routing/route_set.rb',
+        body: 'The route’s endpoint is a Dispatcher. It turns "articles" into ArticlesController, asks the controller class for a fresh response, and calls dispatch with the action name.',
+        code: ['def serve(req)', '  params     = req.path_parameters', '  controller = controller req', '  res        = controller.make_response! req', '  dispatch(controller, params[:action], req, res)', 'rescue ActionController::RoutingError', '  # ...', 'end'].join('\n'),
+        next: 'ArticlesController.dispatch("show", req, res)' },
+      { title: 'Metal sets up request and response', symbol: 'ActionController::Metal#dispatch', gem: 'actionpack', file: 'actionpack/lib/action_controller/metal.rb',
+        body: 'A new controller instance is created for every request. dispatch stores the request and response on it, runs process, commits the flash, and finally returns the Rack triple [status, headers, body].',
+        code: ['def dispatch(name, request, response) # :nodoc:', '  set_request!(request)', '  set_response!(response)', '  process(name)', '  request.commit_flash', '  to_a', 'end'].join('\n'),
+        next: 'AbstractController::Base#process("show")' },
+      { title: 'Callbacks, your action, the render', symbol: 'AbstractController::Base#process', gem: 'actionpack', file: 'actionpack/lib/abstract_controller/base.rb',
+        body: 'process finds the method, then process_action runs your before_action callbacks around it. The action is called with send; if it did not render or redirect, ImplicitRender calls default_render — show.html.erb.',
+        code: ['def process(action, ...)', '  @_action_name = action.to_s', '', '  unless action_name = _find_action_name(@_action_name)', '    raise ActionNotFound.new(...)', '  end', '', '  @_response_body = nil', '', '  process_action(action_name, ...)', 'end'].join('\n'),
+        next: 'ArticlesController#show → ActionView' }
+    ];
+    const step = this.state.step;
+    const base = 'display: flex; gap: 14px; align-items: center; width: 100%; min-height: 56px; padding: 10px 14px; border: none; border-radius: 6px; cursor: pointer; color: #EEE9DF; ';
+    const steps = data.map((d, i) => ({
+      ...d,
+      n: String(i + 1),
+      pick: () => this.setState({ step: i }),
+      rowStyle: base + (i === step ? 'background: #2E3549; box-shadow: 0 0 0 1px #EEE9DF;' : 'background: transparent;'),
+      numStyle: 'flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: IBM Plex Mono, monospace; font-size: 13px; ' + (i === step ? 'background: #F28B6D; color: #2E3549;' : (i < step ? 'background: #EEE9DF; color: #222838;' : 'border: 1px solid #EEE9DF;'))
+    }));
+    const cur = { ...steps[step], url: 'https://github.com/rails/rails/blob/main/' + data[step].file.split(' ')[0] };
+    return {
+      steps, cur,
+      progress: ((step + 1) / data.length * 100) + '%',
+      prev: () => this.setState({ step: Math.max(0, step - 1) }),
+      next: () => this.setState({ step: Math.min(data.length - 1, step + 1) })
+    };
+  }
+}
+</script>
+</body>
+</html>

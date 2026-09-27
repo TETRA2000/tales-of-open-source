@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Revision Note — Request lifecycle</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#222838;color:#EEE9DF}
+a{color:#F28B6D}a:hover{color:#F7AE97}
+button{font:inherit}
+</style>
+</helmet>
+<div style="width: 1280px; height: 1560px; box-sizing: border-box; background: #222838; color: #EEE9DF; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+<header style="display: flex; justify-content: space-between; align-items: center; padding: 20px 72px; background: #2C3346; border-bottom: 1px solid #3D4660; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; color: #A9AFC2">
+<a href="Main.dc.html" style="color: #EEE9DF; text-decoration: none; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase">Tales of Open Source</a>
+<span aria-hidden="true">/</span><a href="SetHome.dc.html" style="color: #A9AFC2">Ruby on Rails, in depth</a><span aria-hidden="true">/</span><span>II · Request lifecycle</span>
+</div>
+<div role="group" aria-label="Formats of this chapter" style="display: flex; gap: 4px; padding: 3px; background: #2C3346; border-radius: 99px">
+<a href="#" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Quick Tale</a>
+<a href="GuidedTrace.dc.html" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Guided Trace</a>
+<a href="RevisionNote.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 99px; background: #EEE9DF; color: #222838; text-decoration: none">Revision Note</a>
+</div>
+</header>
+
+<div style="margin: 24px 72px 0; padding: 10px 16px; border: 1px dashed #8C94AD; border-radius: 4px; font-size: 13px; color: #A9AFC2">Layout sample — commits, statuses and diff lines are placeholders to be filled by the sync job.</div>
+
+<section style="padding: 48px 72px 40px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; align-items: end">
+<div style="grid-column: span 8; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #F28B6D; font-weight: 600"><span style="width: 10px; height: 10px; border-radius: 2px; background: #F28B6D"></span>Revision Note · Ruby on Rails</div>
+<h1 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 60px; line-height: 1.02; font-weight: 500">What changed under “Request lifecycle”</h1>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 21px; line-height: 1.5; color: #D3D0CA">This chapter was written against an older commit. Here is what moved upstream since then, and which passages it touches.</p>
+</div>
+<div style="grid-column: 9 / span 4; display: flex; flex-direction: column; gap: 10px">
+<button type="button" style="min-height: 48px; padding: 0 20px; border: none; border-radius: 99px; background: #EEE9DF; color: #222838; font-size: 15px; font-weight: 500; cursor: pointer">Re-pin chapter to main</button>
+<button type="button" style="min-height: 48px; padding: 0 20px; border: 1px solid #EEE9DF; border-radius: 99px; background: transparent; color: #EEE9DF; font-size: 15px; cursor: pointer">Mark reviewed, keep pin</button>
+</div>
+</section>
+
+<section style="margin: 0 72px; display: grid; grid-template-columns: minmax(0, 1fr) 80px minmax(0, 1fr) 1px repeat(3, 150px); align-items: center; gap: 24px; padding: 24px 28px; background: #EEE9DF; color: #222838; border-radius: 6px">
+<div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #565C70">Pinned</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 18px">[SHA-A]</span><span style="font-size: 13px; color: #565C70">[DATE]</span></div>
+<svg width="80" height="20" viewBox="0 0 80 20" aria-hidden="true"><path d="M0 10H74" stroke="#565C70" stroke-width="1.5"></path><path d="M68 4l8 6-8 6" fill="none" stroke="#565C70" stroke-width="1.5"></path></svg>
+<div style="display: flex; flex-direction: column; gap: 4px"><span style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #565C70">main</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 18px">[SHA-B]</span><span style="font-size: 13px; color: #565C70">[n] commits later</span></div>
+<div style="width: 1px; height: 56px; background: #CFC8B9"></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; line-height: 1">6</span><span style="font-size: 13px; color: #565C70">unchanged</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; line-height: 1; color: #A2481F">1</span><span style="font-size: 13px; color: #565C70">body changed</span></div>
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; line-height: 1; color: #1F6B78">1</span><span style="font-size: 13px; color: #565C70">moved</span></div>
+</section>
+
+<section style="padding: 48px 72px 0; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0 0 8px; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 32px; font-weight: 500">Tracked symbols</h2>
+<div style="display: grid; grid-template-columns: 300px minmax(0, 1fr) 160px 140px; gap: 16px; padding: 0 0 10px; border-bottom: 2px solid #EEE9DF; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2; font-weight: 600"><span>Symbol</span><span>File</span><span>Status</span><span>Used in</span></div>
+<sc-for list="{{symbols}}" as="s" hint-placeholder-count="8">
+<div style="display: grid; grid-template-columns: 300px minmax(0, 1fr) 160px 140px; gap: 16px; align-items: center; min-height: 44px; border-bottom: 1px solid #3D4660">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">{{s.sym}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #A9AFC2">{{s.file}}</span>
+<span style="{{s.statusStyle}}">{{s.status}}</span>
+<a href="GuidedTrace.dc.html" style="font-size: 14px">{{s.used}}</a>
+</div>
+</sc-for>
+</section>
+
+<section style="padding: 48px 72px 0; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px">
+<div style="grid-column: span 7; display: flex; flex-direction: column; border: 1px solid #EEE9DF; border-radius: 6px; overflow: hidden; align-self: start">
+<div style="display: flex; justify-content: space-between; padding: 10px 16px; background: #EEE9DF; color: #222838; font-size: 13px"><span style="font-family: 'IBM Plex Mono', monospace">actionpack/lib/action_dispatch/routing/route_set.rb</span><span style="color: #565C70">[SHA-A]..[SHA-B]</span></div>
+<div style="display: flex; flex-direction: column; padding: 12px 0; background: #2E3549; font-family: 'IBM Plex Mono', monospace; font-size: 14px; line-height: 1.8">
+<sc-for list="{{diff}}" as="d" hint-placeholder-count="8">
+<div style="{{d.style}}"><span style="width: 24px; flex-shrink: 0; text-align: center; color: #A9AFC2">{{d.sign}}</span><span style="white-space: pre">{{d.t}}</span></div>
+</sc-for>
+</div>
+</div>
+<div style="grid-column: 8 / span 5; display: flex; flex-direction: column; gap: 16px">
+<div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2; font-weight: 600">What it means for you</div>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 20px; line-height: 1.6; color: #E2DED7">[Two or three sentences in plain language: what behaviour changed, whether the mental model in the chapter still holds, and which step to re-read.]</p>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 16px; background: #2C3346; border-radius: 6px">
+<div style="font-size: 14px; font-weight: 600">Affected passage</div>
+<a href="GuidedTrace.dc.html" style="font-size: 15px">Guided Trace · Step 6 — The dispatcher picks a controller</a>
+<div style="font-size: 13px; color: #A9AFC2">Code excerpt refreshed · prose needs review</div>
+</div>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const base = 'justify-self: start; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 500; ';
+    const st = {
+      'Unchanged': base + 'border: 1px solid #8C94AD; color: #A9AFC2;',
+      'Body changed': base + 'background: #A2481F; color: #EEE9DF;',
+      'Moved': base + 'background: #6CC8D6; color: #2E3549;'
+    };
+    const row = (sym, file, status, used) => ({ sym, file, status, used, statusStyle: st[status] });
+    const line = (sign, t) => ({ sign, t, style: 'display: flex; padding-right: 16px; ' + (sign === '+' ? 'background: #26455A;' : sign === '−' ? 'background: #4D302E;' : '') });
+    return {
+      symbols: [
+        row('Rails::Engine#call', 'railties/lib/rails/engine.rb', 'Unchanged', 'Step 2'),
+        row('DefaultMiddlewareStack#build_stack', 'railties/lib/rails/application/…', 'Unchanged', 'Step 3'),
+        row('RouteSet#call', 'actionpack/…/routing/route_set.rb', 'Unchanged', 'Step 4'),
+        row('Journey::Router#serve', 'actionpack/…/journey/router.rb', 'Unchanged', 'Step 5'),
+        row('RouteSet::Dispatcher#serve', 'actionpack/…/routing/route_set.rb', 'Body changed', 'Step 6'),
+        row('ActionController::Metal#dispatch', 'actionpack/…/action_controller/metal.rb', 'Unchanged', 'Step 7'),
+        row('AbstractController::Base#process', 'actionpack/…/abstract_controller/base.rb', 'Unchanged', 'Step 8'),
+        row('BasicImplicitRender#send_action', '[new path]', 'Moved', 'Step 8')
+      ],
+      diff: [
+        line(' ', 'def serve(req)'),
+        line(' ', '  params     = req.path_parameters'),
+        line('−', '  [line at pinned commit]'),
+        line('+', '  [line on main]'),
+        line('+', '  [line on main]'),
+        line(' ', '  dispatch(controller, params[:action], req, res)'),
+        line(' ', 'rescue ActionController::RoutingError'),
+        line(' ', '  # ...')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

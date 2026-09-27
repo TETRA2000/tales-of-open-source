@@ -1,0 +1,46 @@
+# Seed from the design prototype. Chapter list is a proposed outline.
+id: rails
+title: Ruby on Rails
+subtitle: in depth
+accent: "#F28B6D"
+repo: rails/rails
+pin:
+  commit: "[SHA]"
+  release: "[VERSION]"
+  synced_at: "[DATE]"
+blurb: How Rails turns a request into a response, and Ruby into SQL.
+description: >-
+  Twelve chapters that open the framework up: how an application boots, how a request becomes a
+  response, how Active Record turns Ruby into SQL, and how jobs leave the request cycle.
+paths:
+  - { level: newcomer, name: The short way round, formats: [QT],
+      what: "Every chapter's Quick Tale in order. One analogy and one diagram each; no prior Rails internals needed." }
+  - { level: practitioner, name: Follow the calls, formats: [GT, AN],
+      what: "Guided Traces and Anatomies: step through real call paths and the objects they pass around." }
+  - { level: contributor, name: Read the source, formats: [SR, FG],
+      what: "Source Readings plus the repo Field Guide, for anyone planning to read — or send — a pull request." }
+parts:
+  - num: I
+    title: Boot
+    chapters:
+      - { id: 01-repository-map, title: The repository map, path_hint: "railties/ · actionpack/ · activerecord/ …", formats: [FG] }
+      - { id: 02-booting, title: Booting an application, path_hint: railties/lib/rails/application.rb, formats: [QT, GT] }
+      - { id: 03-zeitwerk, title: Autoloading with Zeitwerk, path_hint: railties/lib/rails/autoloaders.rb, formats: [QT, AN] }
+  - num: II
+    title: Request
+    chapters:
+      - { id: 04-request-lifecycle, title: Request lifecycle, path_hint: actionpack/lib/action_dispatch/, formats: [QT, GT, RN] }
+      - { id: 05-routing, title: Routing and Journey, path_hint: actionpack/lib/action_dispatch/journey/, formats: [GT, SR] }
+      - { id: 06-controller-callbacks, title: Controller callbacks, path_hint: actionpack/lib/abstract_controller/callbacks.rb, formats: [SR] }
+      - { id: 07-rendering, title: Rendering a view, path_hint: actionview/lib/action_view/, formats: [GT, AN] }
+  - num: III
+    title: Active Record
+    chapters:
+      - { id: 08-relation, title: From query method to Relation, path_hint: activerecord/lib/active_record/relation/, formats: [QT, AN] }
+      - { id: 09-arel, title: How Arel builds SQL, path_hint: activerecord/lib/arel/, formats: [SR] }
+      - { id: 10-associations, title: Associations, path_hint: activerecord/lib/active_record/associations/, formats: [AN, GT] }
+      - { id: 11-transactions, title: Transactions and callbacks, path_hint: activerecord/lib/active_record/transactions.rb, formats: [GT] }
+  - num: IV
+    title: Background work
+    chapters:
+      - { id: 12-active-job, title: "Active Job: enqueue to perform", path_hint: activejob/lib/active_job/, formats: [QT, GT] }

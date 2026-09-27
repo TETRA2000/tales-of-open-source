@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Field Guide — the Node.js repository</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#222838;color:#EEE9DF}
+a{color:#AAD56F}a:hover{color:#C6E79A}
+button{font:inherit}
+</style>
+</helmet>
+<div style="width: 1280px; height: 1240px; box-sizing: border-box; background: #222838; color: #EEE9DF; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+<header style="display: flex; justify-content: space-between; align-items: center; padding: 20px 72px; background: #2C3346; border-bottom: 1px solid #3D4660; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; color: #A9AFC2">
+<a href="Main.dc.html" style="color: #EEE9DF; text-decoration: none; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase">Tales of Open Source</a>
+<span aria-hidden="true">/</span><span>Node.js, in depth</span><span aria-hidden="true">/</span><span>I · The repository map</span>
+</div>
+<div style="display: flex; gap: 8px">
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px">All levels · reference</span>
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px; font-family: 'IBM Plex Mono', monospace">nodejs/node @ [SHA]</span>
+</div>
+</header>
+
+<section style="padding: 56px 72px 36px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; align-items: end">
+<div style="grid-column: span 8; display: flex; flex-direction: column; gap: 16px">
+<div style="display: flex; align-items: center; gap: 12px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #AAD56F; font-weight: 600"><span style="width: 10px; height: 10px; border-radius: 2px; background: #AAD56F"></span>Field Guide · Node.js</div>
+<h1 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 60px; line-height: 1.02; font-weight: 500">Finding your way around nodejs/node</h1>
+</div>
+<div style="grid-column: 9 / span 4; display: flex; gap: 16px; font-size: 13px; color: #D3D0CA; flex-wrap: wrap">
+<sc-for list="{{langs}}" as="g" hint-placeholder-count="4">
+<span style="display: flex; align-items: center; gap: 6px"><span style="{{g.dot}}"></span>{{g.name}}</span>
+</sc-for>
+</div>
+</section>
+
+<section style="padding: 0 72px 64px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; flex-grow: 1">
+<nav aria-label="Repository tree" style="grid-column: span 5; display: flex; flex-direction: column; padding: 12px; background: #2E3549; border: 1px solid #3D4660; border-radius: 6px; align-self: start">
+<sc-for list="{{items}}" as="it" hint-placeholder-count="22">
+<button type="button" onClick="{{it.pick}}" style="{{it.rowStyle}}">
+<span style="{{it.dot}}"></span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px">{{it.label}}</span>
+<span style="{{it.hintStyle}}">{{it.hint}}</span>
+</button>
+</sc-for>
+</nav>
+
+<article style="grid-column: 6 / span 7; display: flex; flex-direction: column; gap: 24px; padding: 8px 0 0 16px">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #A9AFC2; font-weight: 600">{{cur.kind}}</div>
+<h2 style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 36px; font-weight: 500">{{cur.path}}</h2>
+</div>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 22px; line-height: 1.55; color: #E2DED7; text-wrap: pretty">{{cur.what}}</p>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid #EEE9DF; border-radius: 6px">
+<div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2; font-weight: 600">Start reading at</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 15px">{{cur.start}}</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid #EEE9DF; border-radius: 6px">
+<div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2; font-weight: 600">Talks to</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 15px">{{cur.talks}}</div>
+</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid #3D4660">
+<div style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #A9AFC2; font-weight: 600">Chapters that visit here</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{cur.chapters}}" as="c" hint-placeholder-count="2">
+<a href="{{c.href}}" style="display: flex; align-items: center; min-height: 40px; padding: 0 14px; background: #EEE9DF; color: #222838; border-radius: 99px; text-decoration: none; font-size: 14px">{{c.name}}</a>
+</sc-for>
+</div>
+</div>
+</article>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { sel: 'deps/uv/' }; }
+  renderVals() {
+    const colors = { js: '#E8C65C', cpp: '#6CC8D6', vendored: '#B7AA8E', docs: '#F28B6D', build: '#EEE9DF' };
+    const tale = { name: 'The event loop · Quick Tale', href: 'QuickTale.dc.html' };
+    const planned = (n) => ({ name: n + ' [planned]', href: '#' });
+    const data = [
+      { path: 'lib/', d: 0, lang: 'js', kind: 'JavaScript · public API', hint: 'what you require()', what: 'The JavaScript side of Node. One file per built-in module — fs.js, http.js, events.js — each a thin, documented surface over private helpers and C++ bindings.', start: 'lib/fs.js', talks: 'lib/internal/, internalBinding()', chapters: [planned('fs.readFile, JS to thread pool')] },
+      { path: 'lib/internal/', d: 1, lang: 'js', kind: 'JavaScript · private', hint: 'not importable', what: 'Everything public modules share but users must not touch: validators, error classes, the module loaders, the bootstrap sequence.', start: 'lib/internal/bootstrap/node.js', talks: 'src/ via internalBinding()', chapters: [planned('How Node starts')] },
+      { path: 'lib/internal/modules/', d: 2, lang: 'js', kind: 'JavaScript · module loaders', hint: 'cjs + esm', what: 'Both module systems live here: cjs/loader.js implements require(), and esm/ implements import, including the hooks API.', start: 'lib/internal/modules/cjs/loader.js', talks: 'lib/internal/modules/esm/', chapters: [planned('What require() does')] },
+      { path: 'lib/internal/process/task_queues.js', d: 2, lang: 'js', kind: 'JavaScript · scheduling', hint: 'nextTick', what: 'The nextTick queue and the code that drains it together with the microtask queue — the “express lane” from the event-loop tale.', start: 'processTicksAndRejections()', talks: 'V8 microtask queue', chapters: [tale] },
+      { path: 'src/', d: 0, lang: 'cpp', kind: 'C++ · runtime core', hint: 'bindings', what: 'The C++ that embeds V8 and libuv, sets up each Environment, and exposes native functions to JavaScript as internal bindings.', start: 'src/node.cc', talks: 'deps/v8, deps/uv', chapters: [planned('How Node starts')] },
+      { path: 'src/node_file.cc', d: 1, lang: 'cpp', kind: 'C++ · fs binding', hint: 'fs', what: 'The native half of the fs module. Each method packages a request and hands it to libuv, which runs it on the thread pool or synchronously.', start: 'ReadFileUtf8, Open', talks: 'deps/uv (uv_fs_*)', chapters: [planned('fs.readFile, JS to thread pool')] },
+      { path: 'src/env.cc', d: 1, lang: 'cpp', kind: 'C++ · Environment', hint: 'per-isolate state', what: 'The Environment object: per-thread state tying one V8 context to one libuv loop. Workers each get their own.', start: 'Environment::Environment', talks: 'src/node.cc', chapters: [planned('How Node starts')] },
+      { path: 'deps/', d: 0, lang: 'vendored', kind: 'Vendored dependencies', hint: 'third-party', what: 'Complete copies of the libraries Node is built from. They are updated by scripts, not edited by hand — fixes usually go upstream first.', start: 'deps/uv, deps/v8', talks: 'src/', chapters: [] },
+      { path: 'deps/uv/', d: 1, lang: 'vendored', kind: 'C · libuv', hint: 'event loop', what: 'libuv, the cross-platform library behind the event loop, the thread pool, sockets and file I/O. The loop itself is uv_run().', start: 'deps/uv/src/unix/core.c', talks: 'the operating system', chapters: [tale] },
+      { path: 'deps/v8/', d: 1, lang: 'vendored', kind: 'C++ · V8', hint: 'JS engine', what: 'Google’s JavaScript engine: parser, interpreter, optimising compilers, garbage collector. Node embeds it through its public API.', start: 'deps/v8/include/v8.h', talks: 'src/', chapters: [] },
+      { path: 'deps/llhttp/', d: 1, lang: 'vendored', kind: 'C · HTTP parser', hint: 'http', what: 'The HTTP/1.1 parser used by the http module, generated from a TypeScript description into C.', start: 'deps/llhttp/include/llhttp.h', talks: 'src/node_http_parser.cc', chapters: [planned('Life of an HTTP request')] },
+      { path: 'deps/undici/', d: 1, lang: 'vendored', kind: 'JavaScript · fetch', hint: 'fetch()', what: 'The bundled undici HTTP client, which provides the global fetch().', start: 'deps/undici/src/', talks: 'lib/internal/deps/', chapters: [] },
+      { path: 'test/', d: 0, lang: 'js', kind: 'Tests', hint: 'parallel, sequential…', what: 'Tests grouped by how they may run: parallel/ is the bulk; sequential/ must run alone; cctest/ holds C++ unit tests.', start: 'test/parallel/', talks: 'tools/test.py', chapters: [] },
+      { path: 'doc/api/', d: 0, lang: 'docs', kind: 'Documentation', hint: 'markdown', what: 'The source of the official API docs, one Markdown file per module. Stability indexes and history tables live here.', start: 'doc/api/fs.md', talks: 'tools/doc/', chapters: [] },
+      { path: 'tools/', d: 0, lang: 'build', kind: 'Build and maintenance', hint: 'scripts', what: 'Build helpers, linters, the test runner, and the scripts that update vendored dependencies.', start: 'tools/test.py', talks: 'Makefile, deps/', chapters: [] },
+      { path: 'node.gyp', d: 0, lang: 'build', kind: 'Build definition', hint: 'gyp', what: 'Lists every source file compiled into the node binary — including the lib/ files embedded as JavaScript sources.', start: 'node.gyp', talks: 'configure.py', chapters: [] }
+    ];
+    const sel = this.state.sel;
+    const dot = (lang) => 'width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; background: ' + colors[lang] + ';';
+    const items = data.map((x) => ({
+      label: x.d === 0 ? x.path : x.path.split('/').filter(Boolean).slice(x.d).join('/') + (x.path.endsWith('/') ? '/' : ''),
+      hint: x.hint,
+      hintStyle: 'margin-left: auto; font-size: 12px; color: ' + (x.path === sel ? '#3D4660' : '#A9AFC2') + ';',
+      dot: dot(x.lang),
+      pick: () => this.setState({ sel: x.path }),
+      rowStyle: 'display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px 0 ' + (12 + x.d * 22) + 'px; border: none; border-radius: 4px; cursor: pointer; text-align: left; color: #EEE9DF; ' + (x.path === sel ? 'background: #EEE9DF; color: #222838;' : 'background: transparent;')
+    }));
+    const cur = data.find((x) => x.path === sel) || data[0];
+    return {
+      items,
+      cur,
+      langs: [
+        { name: 'JavaScript', dot: dot('js') },
+        { name: 'C++', dot: dot('cpp') },
+        { name: 'Vendored', dot: dot('vendored') },
+        { name: 'Docs', dot: dot('docs') },
+        { name: 'Build', dot: dot('build') }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

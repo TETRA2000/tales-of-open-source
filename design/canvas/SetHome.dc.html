@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ruby on Rails, in depth — set home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#222838;color:#EEE9DF}
+a{color:#F28B6D}a:hover{color:#F7AE97}
+</style>
+</helmet>
+<div style="width: 1280px; height: 2080px; box-sizing: border-box; background: #222838; color: #EEE9DF; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+<header style="display: flex; justify-content: space-between; align-items: center; padding: 20px 72px; background: #2C3346; border-bottom: 1px solid #3D4660; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; color: #A9AFC2">
+<a href="Main.dc.html" style="color: #EEE9DF; text-decoration: none; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase">Tales of Open Source</a>
+<span aria-hidden="true">/</span><span>Ruby on Rails, in depth</span>
+</div>
+<nav style="display: flex; gap: 28px; color: #A9AFC2">
+<a href="#paths" style="color: #A9AFC2; text-decoration: none">Reading paths</a>
+<a href="#contents" style="color: #A9AFC2; text-decoration: none">Contents</a>
+</nav>
+</header>
+
+<section style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; padding: 0 72px">
+<div style="grid-column: span 7; padding: 88px 0 64px; display: flex; flex-direction: column; gap: 24px">
+<div style="display: flex; align-items: center; gap: 12px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #F28B6D; font-weight: 600"><span style="width: 10px; height: 10px; border-radius: 2px; background: #F28B6D"></span>Set 01</div>
+<h1 style="margin: 0; font-size: 92px; line-height: 0.96; font-weight: 500; letter-spacing: -0.02em">Ruby on Rails, <span style="font-weight: 400; color: #F28B6D">in depth</span></h1>
+<p style="margin: 0; font-size: 22px; line-height: 1.5; color: #D3D0CA; text-wrap: pretty">Twelve chapters that open the framework up: how an application boots, how a request becomes a response, how Active Record turns Ruby into SQL, and how jobs leave the request cycle.</p>
+<div style="display: flex; gap: 12px; font-family: 'IBM Plex Sans', sans-serif; font-size: 15px">
+<a href="GuidedTrace.dc.html" style="display: flex; align-items: center; min-height: 48px; padding: 0 22px; background: #F28B6D; color: #2E3549; border-radius: 99px; text-decoration: none; font-weight: 500">Start with Part I</a>
+<a href="FieldGuide.dc.html" style="display: flex; align-items: center; min-height: 48px; padding: 0 22px; border: 1px solid #EEE9DF; color: #EEE9DF; border-radius: 99px; text-decoration: none">Open the repo map</a>
+</div>
+</div>
+<aside style="grid-column: 9 / span 4; margin-top: 88px; align-self: start; background: #EEE9DF; color: #222838; border-radius: 6px; padding: 28px; display: flex; flex-direction: column; gap: 0; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px">
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #565C70; padding-bottom: 12px">Source of truth</div>
+<div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #CFC8B9"><span style="color: #565C70">Repository</span><span style="font-family: 'IBM Plex Mono', monospace">rails/rails</span></div>
+<div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #CFC8B9"><span style="color: #565C70">Pinned commit</span><span style="font-family: 'IBM Plex Mono', monospace">[SHA]</span></div>
+<div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #CFC8B9"><span style="color: #565C70">Release</span><span style="font-family: 'IBM Plex Mono', monospace">[VERSION]</span></div>
+<div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #CFC8B9"><span style="color: #565C70">Last synced</span><span>[DATE]</span></div>
+<div style="display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid #CFC8B9"><span style="color: #565C70">Tracked symbols</span><span>[n]</span></div>
+<a href="RevisionNote.dc.html" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #A2481F; color: #EEE9DF; border-radius: 4px; text-decoration: none; font-weight: 500"><span>1 chapter has drifted</span><span aria-hidden="true">→</span></a>
+</aside>
+</section>
+
+<section id="paths" style="margin: 0 72px; padding: 40px 0; border-top: 2px solid #EEE9DF; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; font-family: 'IBM Plex Sans', sans-serif">
+<sc-for list="{{paths}}" as="p" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 13px; color: #A9AFC2">{{p.pips}} · {{p.who}}</div>
+<div style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 28px; font-weight: 500">{{p.name}}</div>
+<div style="font-size: 15px; line-height: 1.55; color: #D3D0CA">{{p.what}}</div>
+</div>
+</sc-for>
+</section>
+
+<section id="contents" style="padding: 40px 72px 0; display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; justify-content: space-between; align-items: end; padding-bottom: 16px">
+<h2 style="margin: 0; font-size: 48px; font-weight: 500">Contents</h2>
+<div style="display: flex; gap: 16px; font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; color: #D3D0CA">
+<sc-for list="{{legend}}" as="g" hint-placeholder-count="6">
+<span style="display: flex; align-items: center; gap: 6px"><span style="font-family: 'IBM Plex Mono', monospace; font-weight: 500">{{g.code}}</span>{{g.name}}</span>
+</sc-for>
+</div>
+</div>
+<sc-for list="{{parts}}" as="part" hint-placeholder-count="4">
+<div style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding: 28px 0; border-top: 1px solid #EEE9DF">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #F28B6D">PART {{part.num}}</div>
+<div style="font-size: 28px; font-weight: 500; line-height: 1.1">{{part.name}}</div>
+</div>
+<div style="display: flex; flex-direction: column">
+<sc-for list="{{part.chapters}}" as="c" hint-placeholder-count="3">
+<a href="{{c.href}}" style="display: grid; grid-template-columns: 40px minmax(0, 1fr) 260px 120px; gap: 16px; align-items: center; min-height: 56px; padding: 8px 0; border-bottom: 1px solid #3D4660; text-decoration: none; color: #EEE9DF">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #A9AFC2">{{c.num}}</span>
+<span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 20px">{{c.title}}</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #A9AFC2">{{c.path}}</span></span>
+<span style="display: flex; gap: 4px">
+<sc-for list="{{c.formats}}" as="f" hint-placeholder-count="6">
+<span style="{{f.style}}">{{f.code}}</span>
+</sc-for>
+</span>
+<span style="{{c.statusStyle}}">{{c.status}}</span>
+</a>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":2080}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const codes = ['QT', 'GT', 'SR', 'AN', 'FG', 'RN'];
+    const names = ['Quick Tale', 'Guided Trace', 'Source Reading', 'Anatomy', 'Field Guide', 'Revision Note'];
+    const chip = 'width: 38px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 3px; font-family: IBM Plex Mono, monospace; font-size: 11px; ';
+    const statusBase = 'justify-self: end; padding: 4px 10px; border-radius: 99px; font-family: IBM Plex Sans, sans-serif; font-size: 12px; font-weight: 500; ';
+    const statusStyles = {
+      'Up to date': statusBase + 'background: #6CC8D6; color: #2E3549;',
+      'Drifted': statusBase + 'background: #A2481F; color: #EEE9DF;',
+      'Planned': statusBase + 'border: 1px solid #8C94AD; color: #A9AFC2;'
+    };
+    const ch = (num, title, path, has, status, href) => ({
+      num, title, path, status, href: href || '#contents',
+      statusStyle: statusStyles[status],
+      formats: codes.map((code) => ({ code, style: chip + (has.includes(code) ? 'background: #EEE9DF; color: #222838;' : 'border: 1px dashed #58627F; color: #8C94AD;') }))
+    });
+    return {
+      legend: codes.map((code, i) => ({ code, name: names[i] })),
+      paths: [
+        { pips: '●○○', who: 'Newcomer', name: 'The short way round', what: 'Every chapter’s Quick Tale in order. One analogy and one diagram each; no prior Rails internals needed.' },
+        { pips: '●●○', who: 'Practitioner', name: 'Follow the calls', what: 'Guided Traces and Anatomies: step through real call paths and the objects they pass around.' },
+        { pips: '●●●', who: 'Contributor', name: 'Read the source', what: 'Source Readings plus the repo Field Guide, for anyone planning to read — or send — a pull request.' }
+      ],
+      parts: [
+        { num: 'I', name: 'Boot', chapters: [
+          ch('01', 'The repository map', 'railties/ · actionpack/ · activerecord/ …', ['FG'], 'Up to date', 'FieldGuide.dc.html'),
+          ch('02', 'Booting an application', 'railties/lib/rails/application.rb', ['QT', 'GT'], 'Up to date'),
+          ch('03', 'Autoloading with Zeitwerk', 'railties/lib/rails/autoloaders.rb', ['QT', 'AN'], 'Planned')
+        ]},
+        { num: 'II', name: 'Request', chapters: [
+          ch('04', 'Request lifecycle', 'actionpack/lib/action_dispatch/', ['QT', 'GT', 'RN'], 'Drifted', 'GuidedTrace.dc.html'),
+          ch('05', 'Routing and Journey', 'actionpack/lib/action_dispatch/journey/', ['GT', 'SR'], 'Planned'),
+          ch('06', 'Controller callbacks', 'actionpack/lib/abstract_controller/callbacks.rb', ['SR'], 'Planned'),
+          ch('07', 'Rendering a view', 'actionview/lib/action_view/', ['GT', 'AN'], 'Planned')
+        ]},
+        { num: 'III', name: 'Active Record', chapters: [
+          ch('08', 'From query method to Relation', 'activerecord/lib/active_record/relation/', ['QT', 'AN'], 'Planned'),
+          ch('09', 'How Arel builds SQL', 'activerecord/lib/arel/', ['SR'], 'Planned'),
+          ch('10', 'Associations', 'activerecord/lib/active_record/associations/', ['AN', 'GT'], 'Planned'),
+          ch('11', 'Transactions and callbacks', 'activerecord/lib/active_record/transactions.rb', ['GT'], 'Planned')
+        ]},
+        { num: 'IV', name: 'Background work', chapters: [
+          ch('12', 'Active Job: enqueue to perform', 'activejob/lib/active_job/', ['QT', 'GT'], 'Planned')
+        ]}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

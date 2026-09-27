@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quick Tale — The Night Watch</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#222838;color:#EEE9DF}
+a{color:#AAD56F}a:hover{color:#C6E79A}
+code{font-family:'IBM Plex Mono',monospace;font-size:0.86em;background:#2C3346;padding:1px 5px;border-radius:3px}
+</style>
+</helmet>
+<div style="width: 1280px; height: 2560px; box-sizing: border-box; background: #222838; color: #EEE9DF; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+<header style="display: flex; justify-content: space-between; align-items: center; padding: 20px 72px; background: #2C3346; border-bottom: 1px solid #3D4660; font-family: 'IBM Plex Sans', system-ui, sans-serif; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; color: #A9AFC2">
+<a href="Main.dc.html" style="color: #EEE9DF; text-decoration: none; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase">Tales of Open Source</a>
+<span aria-hidden="true">/</span><span>Node.js, in depth</span><span aria-hidden="true">/</span><span>II · The event loop</span>
+</div>
+<div role="group" aria-label="Formats of this chapter" style="display: flex; gap: 4px; padding: 3px; background: #2C3346; border-radius: 99px">
+<a href="QuickTale.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 99px; background: #EEE9DF; color: #222838; text-decoration: none">Quick Tale</a>
+<a href="#" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Guided Trace</a>
+<a href="FieldGuide.dc.html" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Field Guide</a>
+</div>
+</header>
+
+<article style="width: 680px; margin: 0 auto; padding: 96px 0 80px; display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; align-items: center; gap: 12px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #AAD56F; font-weight: 600">
+<span style="width: 10px; height: 10px; border-radius: 2px; background: #AAD56F"></span>Quick Tale · Node.js
+</div>
+<h1 style="margin: 0; font-size: 68px; line-height: 1.02; font-weight: 500; letter-spacing: -0.015em; text-wrap: balance">The Night Watch</h1>
+<p style="margin: 0; font-size: 24px; line-height: 1.45; color: #D3D0CA">How one thread keeps thousands of connections moving — without ever waiting at a door.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; padding-bottom: 28px; border-bottom: 1px solid #3D4660">
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px">●○○ Newcomer</span>
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px">4 min read</span>
+<span style="padding: 5px 10px; border: 1px solid #3D4660; border-radius: 99px; font-family: 'IBM Plex Mono', monospace">nodejs/node @ [SHA]</span>
+</div>
+
+<p style="margin: 0; font-size: 21px; line-height: 1.65; text-wrap: pretty"><span style="float: left; font-size: 84px; line-height: 0.8; padding: 8px 10px 0 0; font-weight: 500; color: #AAD56F">N</span>ode.js runs your JavaScript on a single thread. Only one line of your code executes at any moment. And yet one Node server can hold thousands of open connections at once. The trick is not more threads — it is a loop that never stops making rounds.</p>
+
+<h2 style="margin: 24px 0 0; font-size: 34px; font-weight: 500">Meet the watchman</h2>
+<p style="margin: 0; font-size: 21px; line-height: 1.65; text-wrap: pretty">Picture a night watchman walking a ring of six doors. On every lap he opens each door in the same order, deals with whatever is waiting behind it, and moves on. If a door is empty, he walks past. He never stands at a door waiting for something to arrive — except at one door, and only when there is nothing else to do.</p>
+</article>
+
+<figure style="margin: 0 72px; padding: 56px; background: #2C3346; border-radius: 8px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; align-items: center">
+<div style="grid-column: span 6; display: flex; justify-content: center">
+<svg width="460" height="460" viewBox="0 0 460 460" role="img" aria-label="The six phases of the Node.js event loop arranged in a ring">
+<circle cx="230" cy="230" r="160" fill="none" stroke="#EEE9DF" stroke-width="1.5" stroke-dasharray="3 6"></circle>
+<path d="M 355 130 A 160 160 0 0 1 385 190" fill="none" stroke="#AAD56F" stroke-width="3" stroke-linecap="round"></path>
+<polygon points="385,190 376,176 392,178" fill="#AAD56F"></polygon>
+<g font-family="IBM Plex Sans, sans-serif" font-size="14" text-anchor="middle">
+<circle cx="230" cy="70" r="40" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></circle><text x="230" y="66" font-weight="600" fill="#EEE9DF">1</text><text x="230" y="84" fill="#EEE9DF">timers</text>
+<circle cx="369" cy="150" r="40" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></circle><text x="369" y="146" font-weight="600" fill="#EEE9DF">2</text><text x="369" y="164" fill="#EEE9DF">pending</text>
+<circle cx="369" cy="310" r="40" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></circle><text x="369" y="306" font-weight="600" fill="#EEE9DF">3</text><text x="369" y="324" fill="#EEE9DF">idle/prep</text>
+<circle cx="230" cy="390" r="46" fill="#AAD56F" stroke="#EEE9DF" stroke-width="1.5"></circle><text x="230" y="386" font-weight="600" fill="#2E3549">4</text><text x="230" y="404" fill="#2E3549">poll</text>
+<circle cx="91" cy="310" r="40" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></circle><text x="91" y="306" font-weight="600" fill="#EEE9DF">5</text><text x="91" y="324" fill="#EEE9DF">check</text>
+<circle cx="91" cy="150" r="40" fill="#2E3549" stroke="#EEE9DF" stroke-width="1.5"></circle><text x="91" y="146" font-weight="600" fill="#EEE9DF">6</text><text x="91" y="164" fill="#EEE9DF">close</text>
+</g>
+<text x="230" y="224" text-anchor="middle" font-family="Bricolage Grotesque, IBM Plex Sans, sans-serif" font-size="26" fill="#EEE9DF">one lap</text>
+<text x="230" y="250" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="#A9AFC2">= one loop iteration</text>
+</svg>
+</div>
+<figcaption style="grid-column: 7 / span 6; display: flex; flex-direction: column; gap: 0; font-family: 'IBM Plex Sans', sans-serif">
+<sc-for list="{{phases}}" as="p" hint-placeholder-count="6">
+<div style="display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid #3D4660">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #AAD56F; font-weight: 500">{{p.n}}</div>
+<div><div style="font-size: 15px; font-weight: 600">{{p.name}}</div><div style="font-size: 14px; line-height: 1.5; color: #D3D0CA">{{p.what}}</div></div>
+</div>
+</sc-for>
+</figcaption>
+</figure>
+
+<article style="width: 680px; margin: 0 auto; padding: 72px 0 0; display: flex; flex-direction: column; gap: 28px">
+<h2 style="margin: 0; font-size: 34px; font-weight: 500">The express lane between doors</h2>
+<p style="margin: 0; font-size: 21px; line-height: 1.65; text-wrap: pretty">There is one more rule. Every time the watchman finishes a single task, he checks a small tray in his pocket before touching the next one. Two kinds of notes go in that tray: <code>process.nextTick</code> callbacks first, then resolved Promise callbacks. The tray is always emptied completely — which is why a runaway chain of <code>nextTick</code> calls can keep him from ever reaching the next door.</p>
+
+<div style="display: flex; flex-direction: column; border: 1px solid #EEE9DF; border-radius: 6px; overflow: hidden">
+<div style="display: flex; justify-content: space-between; padding: 10px 16px; background: #EEE9DF; color: #222838; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px"><span>Try it · order.js</span><span style="color: #565C70">Predict the output first</span></div>
+<pre style="margin: 0; padding: 20px; background: #2E3549; font-family: 'IBM Plex Mono', monospace; font-size: 15px; line-height: 1.7; white-space: pre">{{tryCode}}</pre>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #3D4660">
+<div style="padding: 16px 20px; border-right: 1px solid #3D4660; font-family: 'IBM Plex Mono', monospace; font-size: 14px; line-height: 1.7; white-space: pre; color: #D3D0CA">{{tryOut}}</div>
+<div style="padding: 16px 20px; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; line-height: 1.55; color: #D3D0CA">The first three are guaranteed. The last two can swap: from the main script, <strong>timeout</strong> wins only if the loop starts after the 1 ms timer has expired.</div>
+</div>
+</div>
+
+<h2 style="margin: 24px 0 0; font-size: 34px; font-weight: 500">Where the watchman lives</h2>
+<p style="margin: 0; font-size: 21px; line-height: 1.65; text-wrap: pretty">The loop is not written in JavaScript at all. Node vendors a C library called <strong>libuv</strong>, and the rounds happen inside one function, <code>uv_run()</code>. Here is its shape, trimmed down to the doors:</p>
+
+<div style="display: flex; flex-direction: column; border: 1px solid #3D4660; border-radius: 6px; overflow: hidden">
+<div style="display: flex; justify-content: space-between; padding: 10px 16px; background: #2C3346; font-family: 'IBM Plex Mono', monospace; font-size: 13px"><span>deps/uv/src/unix/core.c</span><span style="font-family: 'IBM Plex Sans', sans-serif; color: #A9AFC2">simplified</span></div>
+<pre style="margin: 0; padding: 20px; background: #2E3549; font-family: 'IBM Plex Mono', monospace; font-size: 14px; line-height: 1.7; white-space: pre">{{srcCode}}</pre>
+</div>
+<p style="margin: 0; font-size: 17px; line-height: 1.6; color: #A9AFC2; font-family: 'IBM Plex Sans', sans-serif">The real function also runs due timers once more at the end of each lap, and caps how long <code>uv__io_poll</code> may block so timers are not missed.</p>
+
+<section style="margin-top: 24px; padding: 32px; border-top: 2px solid #EEE9DF; border-bottom: 1px solid #3D4660; display: flex; flex-direction: column; gap: 16px">
+<div style="font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600">Remember three things</div>
+<ol style="margin: 0; padding-left: 24px; display: flex; flex-direction: column; gap: 10px; font-size: 20px; line-height: 1.5">
+<li>One thread runs your code; libuv's loop decides <strong>which</strong> callback runs next.</li>
+<li>Each lap visits six phases in a fixed order. Only <strong>poll</strong> may wait.</li>
+<li>nextTick and Promise callbacks jump the queue after every single callback.</li>
+</ol>
+</section>
+
+<nav aria-label="Keep reading" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; font-family: 'IBM Plex Sans', sans-serif">
+<a href="FieldGuide.dc.html" style="display: flex; flex-direction: column; gap: 6px; padding: 20px; border: 1px solid #3D4660; border-radius: 6px; text-decoration: none; color: #EEE9DF"><span style="font-size: 12px; color: #A9AFC2; text-transform: uppercase; letter-spacing: 0.08em">Field Guide</span><span style="font-size: 17px; font-weight: 500">Explore deps/uv and the rest of the repo</span></a>
+<a href="GuidedTrace.dc.html" style="display: flex; flex-direction: column; gap: 6px; padding: 20px; background: #EEE9DF; border-radius: 6px; text-decoration: none; color: #222838"><span style="font-size: 12px; color: #565C70; text-transform: uppercase; letter-spacing: 0.08em">Go deeper · Guided Trace</span><span style="font-size: 17px; font-weight: 500">[Chapter: fs.readFile, from JS to the thread pool]</span></a>
+</nav>
+</article>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":2560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      phases: [
+        { n: '1', name: 'timers', what: 'setTimeout and setInterval callbacks whose time has come.' },
+        { n: '2', name: 'pending callbacks', what: 'A few system-level callbacks deferred from the previous lap.' },
+        { n: '3', name: 'idle, prepare', what: 'Internal housekeeping. Your code never lands here.' },
+        { n: '4', name: 'poll', what: 'New I/O: finished file reads, incoming sockets. The only door where the loop may wait.' },
+        { n: '5', name: 'check', what: 'setImmediate callbacks — always right after poll.' },
+        { n: '6', name: 'close callbacks', what: '“close” events, such as socket.on(\'close\').' }
+      ],
+      tryCode: [
+        "setTimeout(() => console.log('timeout'), 0);",
+        "setImmediate(() => console.log('immediate'));",
+        "process.nextTick(() => console.log('nextTick'));",
+        "Promise.resolve().then(() => console.log('promise'));",
+        "console.log('sync');"
+      ].join('\n'),
+      tryOut: ['sync', 'nextTick', 'promise', 'timeout    ← or', 'immediate  ← swapped'].join('\n'),
+      srcCode: [
+        'int uv_run(uv_loop_t* loop, uv_run_mode mode) {',
+        '  /* ... */',
+        '  while (r != 0 && loop->stop_flag == 0) {',
+        '    uv__update_time(loop);',
+        '    uv__run_timers(loop);           /* 1 timers   */',
+        '    uv__run_pending(loop);          /* 2 pending  */',
+        '    uv__run_idle(loop);             /* 3 idle     */',
+        '    uv__run_prepare(loop);          /*   prepare  */',
+        '    uv__io_poll(loop, timeout);     /* 4 poll     */',
+        '    uv__run_check(loop);            /* 5 check    */',
+        '    uv__run_closing_handles(loop);  /* 6 close    */',
+        '    r = uv__loop_alive(loop);',
+        '  }',
+        '}'
+      ].join('\n')
+    };
+  }
+}
+</script>
+</body>
+</html>

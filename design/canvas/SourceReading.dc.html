@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Source Reading — what setState does</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;font-family:'IBM Plex Sans',system-ui,sans-serif;background:#222838;color:#EEE9DF}
+a{color:#8FD8E4}a:hover{color:#C2ECF2}
+code{font-family:'IBM Plex Mono',monospace;font-size:0.88em;background:#2C3346;padding:1px 5px;border-radius:3px;color:#EEE9DF}
+</style>
+</helmet>
+<div style="width: 1280px; height: 3100px; box-sizing: border-box; background: #222838; color: #EEE9DF; font-family: 'IBM Plex Sans', system-ui, sans-serif; display: flex; flex-direction: column">
+
+<header style="display: flex; justify-content: space-between; align-items: center; padding: 20px 72px; background: #2C3346; border-bottom: 1px solid #3D4660; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; color: #A9AFC2">
+<a href="Main.dc.html" style="color: #EEE9DF; text-decoration: none; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase">Tales of Open Source</a>
+<span aria-hidden="true">/</span><span>React, in depth</span><span aria-hidden="true">/</span><span>III · State updates</span>
+</div>
+<div role="group" aria-label="Formats of this chapter" style="display: flex; gap: 4px; padding: 3px; background: #2C3346; border-radius: 99px">
+<a href="#" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Quick Tale</a>
+<a href="SourceReading.dc.html" aria-current="page" style="padding: 6px 14px; border-radius: 99px; background: #EEE9DF; color: #222838; text-decoration: none">Source Reading</a>
+<a href="Anatomy.dc.html" style="padding: 6px 14px; border-radius: 99px; color: #D3D0CA; text-decoration: none">Anatomy</a>
+</div>
+</header>
+
+<section style="padding: 80px 72px 48px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px">
+<div style="grid-column: span 9; display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; align-items: center; gap: 12px; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #8FD8E4; font-weight: 600"><span style="width: 10px; height: 10px; border-radius: 2px; background: #6CC8D6"></span>Source Reading · React</div>
+<h1 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 72px; line-height: 1; font-weight: 500; letter-spacing: -0.015em">What <span style="font-family: 'IBM Plex Mono', monospace; font-size: 60px; font-weight: 400">setState</span> actually does</h1>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 23px; line-height: 1.5; color: #D3D0CA; max-width: 820px; text-wrap: pretty">Calling <code>setCount(c =&gt; c + 1)</code> re-renders nothing. It writes a note, picks a priority lane, and asks the scheduler for a turn. We read the two functions that make that happen, line by line.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px">
+<span style="padding: 5px 10px; border: 1px solid #4A5372; border-radius: 99px">●●● Contributor</span>
+<span style="padding: 5px 10px; border: 1px solid #4A5372; border-radius: 99px">30 min</span>
+<span style="padding: 5px 10px; border: 1px solid #4A5372; border-radius: 99px; font-family: 'IBM Plex Mono', monospace">facebook/react @ [SHA]</span>
+<span style="padding: 5px 10px; background: #6CC8D6; color: #1B2030; border-radius: 99px; font-weight: 600">Up to date</span>
+</div>
+</div>
+<aside style="grid-column: 10 / span 3; align-self: end; display: flex; flex-direction: column; gap: 8px; padding: 18px; border: 1px solid #3D4660; border-radius: 6px; font-size: 13px; color: #D3D0CA">
+<div style="font-weight: 600; color: #EEE9DF">Before you start</div>
+<div style="line-height: 1.5">Read <a href="Anatomy.dc.html">Anatomy of a Fiber</a>. You should know what <code>memoizedState</code> and <code>lanes</code> hold.</div>
+</aside>
+</section>
+
+<section style="padding: 0 72px; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; align-items: baseline; gap: 16px; border-top: 1px solid #3D4660; padding-top: 32px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #8FD8E4">§1</span>
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; font-weight: 500">Where the setter comes from</h2>
+</div>
+<div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px">
+<div style="grid-column: span 8; display: flex; flex-direction: column; border: 1px solid #3D4660; border-radius: 6px; overflow: hidden">
+<div style="display: flex; justify-content: space-between; padding: 10px 16px; background: #2C3346; font-size: 12px; color: #A9AFC2"><span style="font-family: 'IBM Plex Mono', monospace; color: #EEE9DF">packages/react-reconciler/src/ReactFiberHooks.js</span><span>excerpt · Flow types kept</span></div>
+<div style="display: flex; flex-direction: column; padding: 14px 0; background: #1B2030; font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; line-height: 1.75">
+<sc-for list="{{codeA}}" as="l" hint-placeholder-count="20">
+<div style="{{l.rowStyle}}"><span style="width: 44px; flex-shrink: 0; text-align: right; padding-right: 14px; color: #7D86A0">{{l.n}}</span><span style="white-space: pre; flex-grow: 1">{{l.t}}</span><span style="{{l.markStyle}}">{{l.m}}</span></div>
+</sc-for>
+</div>
+</div>
+<div style="grid-column: 9 / span 4; display: flex; flex-direction: column; gap: 24px; padding-top: 44px">
+<sc-for list="{{notesA}}" as="n" hint-placeholder-count="3">
+<div style="display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px">
+<span style="width: 24px; height: 24px; border-radius: 50%; background: #6CC8D6; color: #1B2030; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600">{{n.m}}</span>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="font-size: 15px; font-weight: 600">{{n.title}}</div><div style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 17px; line-height: 1.55; color: #D3D0CA">{{n.body}}</div></div>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+
+<section style="padding: 56px 72px 0; display: flex; flex-direction: column; gap: 20px">
+<div style="display: flex; align-items: baseline; gap: 16px; border-top: 1px solid #3D4660; padding-top: 32px">
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #8FD8E4">§2</span>
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 36px; font-weight: 500">Inside the dispatch</h2>
+</div>
+<p style="margin: 0; max-width: 820px; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 20px; line-height: 1.6; color: #D3D0CA">The bound setter calls <code>dispatchSetState</code>, which requests a lane and delegates to the internal version below. Everything interesting happens here.</p>
+<div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px">
+<div style="grid-column: span 8; display: flex; flex-direction: column; border: 1px solid #3D4660; border-radius: 6px; overflow: hidden">
+<div style="display: flex; justify-content: space-between; padding: 10px 16px; background: #2C3346; font-size: 12px; color: #A9AFC2"><span style="font-family: 'IBM Plex Mono', monospace; color: #EEE9DF">ReactFiberHooks.js · dispatchSetStateInternal</span><span>excerpt · DEV branches removed</span></div>
+<div style="display: flex; flex-direction: column; padding: 14px 0; background: #1B2030; font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; line-height: 1.75">
+<sc-for list="{{codeB}}" as="l" hint-placeholder-count="40">
+<div style="{{l.rowStyle}}"><span style="width: 44px; flex-shrink: 0; text-align: right; padding-right: 14px; color: #7D86A0">{{l.n}}</span><span style="white-space: pre; flex-grow: 1">{{l.t}}</span><span style="{{l.markStyle}}">{{l.m}}</span></div>
+</sc-for>
+</div>
+</div>
+<div style="grid-column: 9 / span 4; display: flex; flex-direction: column; gap: 24px; padding-top: 44px">
+<sc-for list="{{notesB}}" as="n" hint-placeholder-count="5">
+<div style="display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px">
+<span style="width: 24px; height: 24px; border-radius: 50%; background: #6CC8D6; color: #1B2030; display: flex; align-items: center; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600">{{n.m}}</span>
+<div style="display: flex; flex-direction: column; gap: 6px"><div style="font-size: 15px; font-weight: 600">{{n.title}}</div><div style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 17px; line-height: 1.55; color: #D3D0CA">{{n.body}}</div></div>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+
+<section style="margin: 56px 72px 0; padding: 32px; background: #2C3346; border-radius: 8px; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px">
+<div style="grid-column: span 4; display: flex; flex-direction: column; gap: 8px">
+<div style="font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #8FD8E4; font-weight: 600">Verify it yourself</div>
+<div style="font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 28px; line-height: 1.15">Two breakpoints worth setting</div>
+</div>
+<ol style="grid-column: 5 / span 8; margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 12px; font-family: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif; font-size: 18px; line-height: 1.55; color: #D3D0CA">
+<li>Break on <code>enqueueConcurrentHookUpdateAndEagerlyBailout</code>, then call a setter with the current value. You land there — and no render is scheduled.</li>
+<li>Break on <code>scheduleUpdateOnFiber</code> and inspect <code>lane</code>: a click handler and a <code>startTransition</code> call produce different lanes.</li>
+</ol>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":3100}}'>
+class Component extends DCLogic {
+  lines(src, marks) {
+    return src.map((t, i) => {
+      const m = marks[i + 1] || '';
+      return {
+        n: String(i + 1), t, m,
+        rowStyle: 'display: flex; align-items: center; padding-right: 14px; ' + (m ? 'background: rgba(108,200,214,0.16); box-shadow: inset 3px 0 0 #6CC8D6;' : ''),
+        markStyle: m ? 'flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: #6CC8D6; color: #1B2030; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;' : 'width: 20px; flex-shrink: 0;'
+      };
+    });
+  }
+  renderVals() {
+    const a = [
+      'function mountStateImpl<S>(initialState: (() => S) | S): Hook {',
+      '  const hook = mountWorkInProgressHook();',
+      "  if (typeof initialState === 'function') {",
+      '    const initialStateInitializer = initialState;',
+      '    initialState = initialStateInitializer();',
+      '    // ... StrictMode double-invoke elided',
+      '  }',
+      '  hook.memoizedState = hook.baseState = initialState;',
+      '  const queue: UpdateQueue<S, BasicStateAction<S>> = {',
+      '    pending: null,',
+      '    lanes: NoLanes,',
+      '    dispatch: null,',
+      '    lastRenderedReducer: basicStateReducer,',
+      '    lastRenderedState: (initialState: any),',
+      '  };',
+      '  hook.queue = queue;',
+      '  return hook;',
+      '}',
+      '',
+      'function mountState<S>(initialState) {',
+      '  const hook = mountStateImpl(initialState);',
+      '  const queue = hook.queue;',
+      '  const dispatch = (dispatchSetState.bind(',
+      '    null,',
+      '    currentlyRenderingFiber,',
+      '    queue,',
+      '  ): any);',
+      '  queue.dispatch = dispatch;',
+      '  return [hook.memoizedState, dispatch];',
+      '}'
+    ];
+    const b = [
+      'function dispatchSetStateInternal<S, A>(',
+      '  fiber: Fiber, queue: UpdateQueue<S, A>, action: A, lane: Lane,',
+      '): boolean {',
+      '  const update: Update<S, A> = {',
+      '    lane,',
+      '    revertLane: NoLane,',
+      '    action,',
+      '    hasEagerState: false,',
+      '    eagerState: null,',
+      '    next: (null: any),',
+      '  };',
+      '',
+      '  if (isRenderPhaseUpdate(fiber)) {',
+      '    enqueueRenderPhaseUpdate(queue, update);',
+      '  } else {',
+      '    const alternate = fiber.alternate;',
+      '    if (',
+      '      fiber.lanes === NoLanes &&',
+      '      (alternate === null || alternate.lanes === NoLanes)',
+      '    ) {',
+      '      const lastRenderedReducer = queue.lastRenderedReducer;',
+      '      if (lastRenderedReducer !== null) {',
+      '        try {',
+      '          const currentState: S = (queue.lastRenderedState: any);',
+      '          const eagerState = lastRenderedReducer(currentState, action);',
+      '          update.hasEagerState = true;',
+      '          update.eagerState = eagerState;',
+      '          if (is(eagerState, currentState)) {',
+      '            enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);',
+      '            return false;',
+      '          }',
+      '        } catch (error) {',
+      '          // Suppress the error. It will throw again in the render phase.',
+      '        }',
+      '      }',
+      '    }',
+      '',
+      '    const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);',
+      '    if (root !== null) {',
+      '      scheduleUpdateOnFiber(root, fiber, lane);',
+      '      entangleTransitionUpdate(root, queue, lane);',
+      '      return true;',
+      '    }',
+      '  }',
+      '  return false;',
+      '}'
+    ];
+    return {
+      codeA: this.lines(a, { 2: 'A', 8: 'B', 23: 'C' }),
+      notesA: [
+        { m: 'A', title: 'A hook is a list node', body: 'mountWorkInProgressHook appends a new hook object to the fiber’s memoizedState list. Call order is identity — which is why hooks cannot sit inside conditions.' },
+        { m: 'B', title: 'Two copies of the state', body: 'memoizedState is what this render shows; baseState is where skipped low-priority updates restart from. At mount they are the same value.' },
+        { m: 'C', title: 'Why setters are stable', body: 'bind() captures the fiber and queue once, at mount. Every later render returns the same function, so it is safe to leave out of effect dependencies.' }
+      ],
+      codeB: this.lines(b, { 4: '1', 13: '2', 18: '3', 28: '4', 38: '5' }),
+      notesB: [
+        { m: '1', title: 'The update is just a note', body: 'An object holding the action and its lane. Nothing is computed yet; next will link it into a circular queue.' },
+        { m: '2', title: 'Updates during render', body: 'Calling a setter while this same component renders is queued separately and replayed immediately, before the render finishes.' },
+        { m: '3', title: 'The eager path', body: 'Only when neither copy of the fiber has pending work can React safely compute the new state right now, outside of rendering.' },
+        { m: '4', title: 'Same value, no render', body: 'Object.is compares old and new. If equal, the update is still recorded but no render is scheduled — the classic bail-out.' },
+        { m: '5', title: 'Asking for a turn', body: 'The update joins the concurrent queue and the root is marked. scheduleUpdateOnFiber hands the lane to the scheduler; rendering happens later.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

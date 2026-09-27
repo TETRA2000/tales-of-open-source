@@ -1,0 +1,24 @@
+{
+  "v": 3,
+  "attachments": {},
+  "createdOnFiles": {"at": "2026-09-27T03:00:00Z", "v": 1},
+  "title": "Tales of Open Source",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1280, "h": 1480, "title": "Library home — all sets"},
+    "SetHome.dc.html": {"x": 1360, "y": 0, "w": 1280, "h": 2080, "title": "Set home — Ruby on Rails, in depth"},
+    "QuickTale.dc.html": {"x": 0, "y": 2500, "w": 1280, "h": 2560, "title": "1 · Quick Tale — Node.js set (Newcomer)"},
+    "GuidedTrace.dc.html": {"x": 1360, "y": 2500, "w": 1280, "h": 1400, "title": "2 · Guided Trace — Rails set (Practitioner)", "is_interactive": true},
+    "SourceReading.dc.html": {"x": 2720, "y": 2500, "w": 1280, "h": 3100, "title": "3 · Source Reading — React set (Contributor)"},
+    "Anatomy.dc.html": {"x": 4080, "y": 2500, "w": 1280, "h": 2140, "title": "4 · Anatomy — React set (Practitioner)"},
+    "FieldGuide.dc.html": {"x": 5440, "y": 2500, "w": 1280, "h": 1240, "title": "5 · Field Guide — Node.js set (All levels)", "is_interactive": true},
+    "RevisionNote.dc.html": {"x": 6800, "y": 2500, "w": 1280, "h": 1560, "title": "6 · Revision Note — Rails set"}
+  },
+  "order": ["Main.dc.html", "SetHome.dc.html","QuickTale.dc.html", "GuidedTrace.dc.html", "SourceReading.dc.html", "Anatomy.dc.html", "FieldGuide.dc.html", "RevisionNote.dc.html"],
+  "notes": {
+    "title": {"x": 0, "y": -300, "w": 240, "text": "Library & sets", "kind": "title1", "maxW": 2640},
+    "formats": {"x": 0, "y": 2200, "w": 240, "text": "Article formats — samples from different sets", "kind": "title1", "maxW": 8080}
+  },
+  "designSystems": []
+}
