@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { hasCommit, runGit } from "../src/lib/git.ts";
 import { collectSources, type RepoSources } from "../src/lib/sources.ts";
 import { syncRepo } from "../src/lib/sync.ts";
+import { tempDir } from "./temp-dir.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/content");
 
@@ -31,7 +31,7 @@ describe("syncRepo", () => {
   const git = (dir: string, ...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
 
   beforeAll(() => {
-    upstream = mkdtempSync(join(tmpdir(), "toos-upstream-"));
+    upstream = tempDir("upstream");
     git(upstream, "init", "-q", "-b", "main");
     git(upstream, "config", "user.email", "test@example.com");
     git(upstream, "config", "user.name", "Test");
@@ -57,7 +57,7 @@ describe("syncRepo", () => {
   });
 
   it("makes a blobless clone that can read every quoted file at its pin", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "toos-repos-")), "demo");
+    const dir = join(tempDir("repos"), "demo");
     const report = syncRepo(sources({ [first]: ["a.rb"], [second]: ["b.rb"] }, { tag: "v1.0.0", commit: first }), { dir, url });
     expect(report).toEqual({ cloned: true, fetched: [], problems: [] });
     expect(runGit(dir, ["config", "remote.origin.partialclonefilter"]).trim()).toBe("blob:none");
@@ -65,13 +65,13 @@ describe("syncRepo", () => {
   });
 
   it("is a no-op when everything is already there", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "toos-repos-")), "demo");
+    const dir = join(tempDir("repos"), "demo");
     syncRepo(sources({ [first]: ["a.rb"] }), { dir, url });
     expect(syncRepo(sources({ [first]: ["a.rb"] }), { dir, url })).toEqual({ cloned: false, fetched: [], problems: [] });
   });
 
   it("fetches a pinned commit the clone does not have yet", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "toos-repos-")), "demo");
+    const dir = join(tempDir("repos"), "demo");
     syncRepo(sources({ [first]: [] }), { dir, url });
     writeFileSync(join(upstream, "c.rb"), "def c\nend\n");
     git(upstream, "add", ".");
@@ -86,7 +86,7 @@ describe("syncRepo", () => {
   });
 
   it("reports missing files and a release tag that points elsewhere", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "toos-repos-")), "demo");
+    const dir = join(tempDir("repos"), "demo");
     const report = syncRepo(sources({ [second]: ["nope.rb"] }, { tag: "v1.0.0", commit: second }), { dir, url });
     expect(report.problems).toEqual([
       `nope.rb does not exist at ${second}`,
@@ -95,7 +95,7 @@ describe("syncRepo", () => {
   });
 
   it("refuses a folder that is a clone of something else", () => {
-    const dir = join(mkdtempSync(join(tmpdir(), "toos-repos-")), "demo");
+    const dir = join(tempDir("repos"), "demo");
     syncRepo(sources({}), { dir, url });
     expect(() => syncRepo(sources({}), { dir, url: "https://github.com/example/other.git" })).toThrow(/expected https:\/\/github.com\/example\/other/);
   });

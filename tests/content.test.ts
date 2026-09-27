@@ -1,9 +1,9 @@
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadLibrary } from "../src/lib/content.ts";
 import type { RepoReader } from "../src/lib/git.ts";
+import { tempDir } from "./temp-dir.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/content");
 const PIN = "1111111111111111111111111111111111111111";
@@ -33,7 +33,7 @@ function fakeRepo(files: Record<string, string> = { "lib/demo.rb": DEMO_RB }): (
 }
 
 function copyFixture(): string {
-  const dir = mkdtempSync(join(tmpdir(), "toos-content-"));
+  const dir = tempDir("content");
   cpSync(FIXTURE, dir, { recursive: true });
   return dir;
 }
