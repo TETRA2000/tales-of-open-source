@@ -37,12 +37,12 @@ Every article shares: breadcrumb, format switcher (other formats of the same cha
     An unknown `kind` fails to parse.
 - **Checks at build time** (`parseAnatomy`, collected into one "excerpt check failed at `<pin>`" error, like Guided Trace):
   1. Every `source` — the struct's and each section's — is verified against its file at the pin (`verifyExcerpt`) and gets a GitHub blob URL.
-  2. Struct fields, both ways: every field listed in a group must appear in the struct excerpt as `this.<field> =`; every such assignment in the excerpt (ignoring elided lines and `//` comments) must belong to exactly one group; a field listed in two groups is an error. Elided code (e.g. `__DEV__` blocks) is out of scope by design.
+  2. Struct fields, both ways: every field listed in a group must appear in the struct excerpt as `this.<field> =`; every such assignment in the excerpt (ignoring elided lines and whole-line `//` comments) must belong to exactly one group; a field listed in two groups is an error. Elided code (e.g. `__DEV__` blocks) is out of scope by design.
   3. Reference rows: each `reference-grid` row must match a line of its excerpt against `\b<name>\s*=\s*<value>\b`, with `name` and `value` regex-escaped (so a value is never matched by prefix).
-  4. Ids: section ids are unique and none is `struct`; group keys are unique and match `^[A-Z]{2}$`.
+  4. Ids: a section `id` must match `^[a-z][a-z0-9-]*$` (it becomes a DOM id), be unique, and be neither `struct` nor `struct-name` (both are already used as DOM ids elsewhere on the page); group keys are unique and match `^[A-Z]{2}$`.
   5. Tracked symbols: `used_in` must be `struct` or a section id that has a source, and `file` must equal that block's source file.
   6. `pointer-tree`: the tree has at least one node, and node names are non-empty; duplicate names are fine since nodes are identified by their path in the tree.
-- A new section kind is one schema entry in `src/lib/anatomy.ts` plus one component in `src/components/anatomy/`.
+- A new section kind touches five places: the zod schema for the kind and its entry in the `discriminatedUnion` list, the `AnatomySection` type, the `parseAnatomy` `switch` (which is exhaustive — a kind left out fails to compile), the `SECTIONS` map in `src/components/anatomy/Anatomy.astro`, and a new component in `src/components/anatomy/`.
 
 ## FG · Field Guide — interactive
 - **Goal:** orient in the repository. All levels, reference.

@@ -196,6 +196,7 @@ tracked_symbols:
   - { symbol: FunctionComponent, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
   - { symbol: ClassComponent, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
   - { symbol: HostRoot, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
+  - { symbol: HostPortal, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
   - { symbol: HostComponent, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
   - { symbol: HostText, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
   - { symbol: Fragment, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }

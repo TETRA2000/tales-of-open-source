@@ -74,6 +74,7 @@ test.describe("Anatomy", () => {
     await page.goto(ANATOMY);
     const details = page.locator("details").filter({ has: page.getByText("Source at pin", { exact: true }) });
     await details.getByText("Source at pin", { exact: true }).click();
+    await expect(details.getByRole("link", { name: "View on GitHub at pin" })).toBeVisible();
     await expect(details.getByRole("link", { name: "View on GitHub at pin" })).toHaveAttribute(
       "href",
       "https://github.com/facebook/react/blob/1d34f91dfde6bba84d08b683aaba164c7194dacb/packages/react-reconciler/src/ReactFiber.js#L134-L207",
@@ -135,7 +136,7 @@ test("React set home shows its pin and links chapter 07 to its Guided Trace", as
   await expect(truth).toContainText("1d34f91");
   await expect(truth).toContainText("v19.3.0");
   await expect(truth).toContainText("2026-09-27");
-  await expect(truth).toContainText("Tracked symbols78");
+  await expect(truth).toContainText("Tracked symbols79");
   await page.getByRole("link", { name: /What setState does/ }).click();
   await expect(page).toHaveURL(/\/react\/07-use-state\/guided-trace\/$/);
   await expect(page.getByRole("link", { name: "View on GitHub at pin" })).toHaveAttribute(
@@ -154,6 +155,15 @@ test.describe("phone width", () => {
       expect(overflow).toBe(0);
     });
   }
+});
+
+test.describe("phone width 375", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+  test(`${ANATOMY} has no horizontal page scroll`, async ({ page }) => {
+    await page.goto(ANATOMY);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBe(0);
+  });
 });
 
 const TRACES = [

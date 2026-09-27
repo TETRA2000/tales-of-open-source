@@ -62,67 +62,69 @@ const edgeTexts = layout.edges.map((edge) => describeEdge(layout, edge));
     {section.body && <p>{section.body}</p>}
   </div>
 
-  <figure class="an-figure">
-    <div class="tree-pair">
-      <div class="example">
-        <div class="an-label">Example</div>
-        <pre class="mono" tabindex="0" aria-label="Example JSX">{section.jsx.replace(/\n+$/, "")}</pre>
+  <div class="an-figure">
+    <figure>
+      <div class="tree-pair">
+        <div class="example">
+          <div class="an-label">Example</div>
+          <pre class="mono" tabindex="0" aria-label="Example JSX">{section.jsx.replace(/\n+$/, "")}</pre>
+        </div>
+
+        <svg
+          class="tree"
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          style={`max-width: ${Math.round(layout.width * 1.5)}px`}
+          role="img"
+          aria-labelledby={diagramTitleId}
+        >
+          <title id={diagramTitleId}>{section.title} — diagram</title>
+          <defs>
+            <marker id={arrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path class="arrow" d="M0 0L10 5L0 10z"></path>
+            </marker>
+            <marker id={returnArrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path class="arrow-return" d="M0 0L10 5L0 10z"></path>
+            </marker>
+          </defs>
+          {
+            lines.map((line) => (
+              <line
+                class={`edge edge-${line.kind}`}
+                x1={line.x1}
+                y1={line.y1}
+                x2={line.x2}
+                y2={line.y2}
+                marker-end={`url(#${line.kind === "return" ? returnArrowId : arrowId})`}
+              />
+            ))
+          }
+          {
+            layout.nodes.map((node) => (
+              <g class:list={["node", { root: node.id === "0" }]}>
+                <rect x={node.x - NODE_W / 2} y={node.y - NODE_H / 2} width={NODE_W} height={NODE_H} rx="4" />
+                <text x={node.x} y={node.y} text-anchor="middle" dominant-baseline="central">
+                  {node.name}
+                </text>
+              </g>
+            ))
+          }
+        </svg>
       </div>
 
-      <svg
-        class="tree"
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        style={`max-width: ${Math.round(layout.width * 1.5)}px`}
-        role="img"
-        aria-labelledby={diagramTitleId}
-      >
-        <title id={diagramTitleId}>{section.title} — diagram</title>
-        <defs>
-          <marker id={arrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-            <path class="arrow" d="M0 0L10 5L0 10z"></path>
-          </marker>
-          <marker id={returnArrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-            <path class="arrow-return" d="M0 0L10 5L0 10z"></path>
-          </marker>
-        </defs>
-        {
-          lines.map((line) => (
-            <line
-              class={`edge edge-${line.kind}`}
-              x1={line.x1}
-              y1={line.y1}
-              x2={line.x2}
-              y2={line.y2}
-              marker-end={`url(#${line.kind === "return" ? returnArrowId : arrowId})`}
-            />
-          ))
-        }
-        {
-          layout.nodes.map((node) => (
-            <g class:list={["node", { root: node.id === "0" }]}>
-              <rect x={node.x - NODE_W / 2} y={node.y - NODE_H / 2} width={NODE_W} height={NODE_H} rx="4" />
-              <text x={node.x} y={node.y} text-anchor="middle" dominant-baseline="central">
-                {node.name}
-              </text>
-            </g>
-          ))
-        }
-      </svg>
-    </div>
-
-    <ul class="visually-hidden" aria-label="Edges in this diagram">
-      {edgeTexts.map((text) => <li>{text}</li>)}
-    </ul>
-
-    <figcaption>
-      <ul class="tree-legend">
-        <li><span class="swatch swatch-down" aria-hidden="true"></span>child / sibling — the way down and across</li>
-        <li><span class="swatch swatch-return" aria-hidden="true"></span>return — the way back up</li>
+      <ul class="visually-hidden" aria-label="Edges in this diagram">
+        {edgeTexts.map((text) => <li>{text}</li>)}
       </ul>
-    </figcaption>
+
+      <figcaption>
+        <ul class="tree-legend">
+          <li><span class="swatch swatch-down" aria-hidden="true"></span>child / sibling — the way down and across</li>
+          <li><span class="swatch swatch-return" aria-hidden="true"></span>return — the way back up</li>
+        </ul>
+      </figcaption>
+    </figure>
 
     {section.source && <CodePanel source={section.source} />}
-  </figure>
+  </div>
 </section>
 
 <style>

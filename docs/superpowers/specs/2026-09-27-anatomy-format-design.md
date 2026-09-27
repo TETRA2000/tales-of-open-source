@@ -99,6 +99,8 @@ tracked_symbols:
   - { symbol: WorkTag, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
 ```
 
+During implementation, the `WorkTag` entry above was replaced by one tracked symbol per quoted work-tag constant (`FunctionComponent`, `ClassComponent`, `HostRoot`, `HostPortal`, `HostComponent`, `HostText`, `Fragment`), because an article tracks the symbols it quotes and `WorkTag` (`ReactWorkTags.js:10-42`) is outside the quoted lines.
+
 The line ranges above were read from the pinned clone while designing. The implementation re-reads them, and the loader enforces them.
 
 ### Section kinds (registry)

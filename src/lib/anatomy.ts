@@ -21,6 +21,10 @@ const TreeNodeSchema: z.ZodType<TreeNode> = z.lazy(() =>
   }),
 );
 
+// Section ids become DOM ids (the section's <section id="...">), so they must
+// look like one: lowercase, starting with a letter, hyphen-separated.
+const SectionIdSchema = z.string().regex(/^[a-z][a-z0-9-]*$/);
+
 const StructGroupSchema = z.object({
   key: z.string().regex(/^[A-Z]{2}$/),
   name: z.string(),
@@ -42,7 +46,7 @@ const RowSchema = z.object({
 
 const PointerTreeSectionSchema = z.object({
   kind: z.literal("pointer-tree"),
-  id: z.string(),
+  id: SectionIdSchema,
   title: z.string(),
   body: z.string(),
   jsx: z.string(),
@@ -52,7 +56,7 @@ const PointerTreeSectionSchema = z.object({
 
 const TwinTreesSectionSchema = z.object({
   kind: z.literal("twin-trees"),
-  id: z.string(),
+  id: SectionIdSchema,
   title: z.string(),
   body: z.string(),
   nodes: z.array(z.string()).min(1),
@@ -61,7 +65,7 @@ const TwinTreesSectionSchema = z.object({
 
 const ReferenceGridSectionSchema = z.object({
   kind: z.literal("reference-grid"),
-  id: z.string(),
+  id: SectionIdSchema,
   title: z.string(),
   body: z.string().nullable().default(null),
   source: SourceSchema,
@@ -129,7 +133,10 @@ export function assignedFields(code: string): string[] {
 
 function rowIsInExcerpt(code: string, name: string, value: string): boolean {
   const pattern = new RegExp(`\\b${escapeRegExp(name)}\\s*=\\s*${escapeRegExp(value)}\\b`);
-  return code.split("\n").some((line) => pattern.test(line));
+  return code.split("\n").some((line) => {
+    if (isElision(line) || line.trim().startsWith("//")) return false;
+    return pattern.test(line);
+  });
 }
 
 export function parseAnatomy(raw: unknown, { repo, pin, reader }: ArticleContext): AnatomyBody {
@@ -178,23 +185,33 @@ export function parseAnatomy(raw: unknown, { repo, pin, reader }: ArticleContext
   const sectionIds = data.sections.map((s) => s.id);
   if (new Set(sectionIds).size !== sectionIds.length) problems.push("section ids must be unique");
   if (sectionIds.includes("struct")) problems.push('"struct" cannot be a section id');
+  if (sectionIds.includes("struct-name")) problems.push('"struct-name" cannot be a section id');
 
   const sections: AnatomySection[] = data.sections.map((section): AnatomySection => {
     const body = section.body;
-    if (section.kind === "reference-grid") {
-      const source = verifySource(section.id, section.source);
-      for (const row of section.rows) {
-        if (!rowIsInExcerpt(source.code, row.name, row.value)) {
-          problems.push(`${section.id}: row ${row.name} = ${row.value} is not in the excerpt`);
+    switch (section.kind) {
+      case "reference-grid": {
+        const source = verifySource(section.id, section.source);
+        for (const row of section.rows) {
+          if (!rowIsInExcerpt(source.code, row.name, row.value)) {
+            problems.push(`${section.id}: row ${row.name} = ${row.value} is not in the excerpt`);
+          }
         }
+        return { id: section.id, title: section.title, body, kind: "reference-grid", rows: section.rows, source };
       }
-      return { id: section.id, title: section.title, body, kind: "reference-grid", rows: section.rows, source };
+      case "pointer-tree": {
+        const source = section.source ? verifySource(section.id, section.source) : null;
+        return { id: section.id, title: section.title, body, kind: "pointer-tree", jsx: section.jsx, tree: section.tree, source };
+      }
+      case "twin-trees": {
+        const source = section.source ? verifySource(section.id, section.source) : null;
+        return { id: section.id, title: section.title, body, kind: "twin-trees", nodes: section.nodes, source };
+      }
+      default: {
+        const unreachable: never = section;
+        throw new Error(`unknown section kind: ${JSON.stringify(unreachable)}`);
+      }
     }
-    const source = section.source ? verifySource(section.id, section.source) : null;
-    if (section.kind === "pointer-tree") {
-      return { id: section.id, title: section.title, body, kind: "pointer-tree", jsx: section.jsx, tree: section.tree, source };
-    }
-    return { id: section.id, title: section.title, body, kind: "twin-trees", nodes: section.nodes, source };
   });
 
   const sourceFileFor = (usedIn: string): string | undefined =>

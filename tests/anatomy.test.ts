@@ -44,6 +44,7 @@ const THING_JS = [
   "export const Alpha = 0;",
   "export const Beta = 10;",
   "export const Gamma = 1;",
+  "// Foo = 1",
 ].join("\n");
 
 const STRUCT_CODE = [
@@ -59,7 +60,7 @@ const STRUCT_CODE = [
   "}",
 ].join("\n");
 
-const GRID_CODE = ["export const Alpha = 0;", "export const Beta = 10;", "export const Gamma = 1;"].join("\n");
+const GRID_CODE = ["export const Alpha = 0;", "export const Beta = 10;", "export const Gamma = 1;", "// Foo = 1"].join("\n");
 
 function fakeRepo(files: Record<string, string>): (repo: string) => RepoReader {
   return () => ({
@@ -108,7 +109,7 @@ const VALID = {
       kind: "reference-grid",
       title: "Tags you will meet first",
       body: "A handful of constants.",
-      source: { file: "lib/thing.js", lines: "14-16", code: GRID_CODE },
+      source: { file: "lib/thing.js", lines: "14-17", code: GRID_CODE },
       rows: [
         { name: "Alpha", value: "0", example: "const a = Alpha" },
         { name: "Gamma", value: "1", example: "const g = Gamma" },
@@ -160,6 +161,36 @@ describe("parseAnatomy", () => {
     const bad = structuredClone(VALID);
     grid(bad).rows.push({ name: "Delta", value: "2", example: "x" });
     expect(() => parseAnatomy(bad, ctx)).toThrow(/row Delta = 2 is not in the excerpt/);
+  });
+
+  it("rejects a reference row that only appears in a // comment line", () => {
+    const bad = structuredClone(VALID);
+    grid(bad).rows.push({ name: "Foo", value: "1", example: "x" });
+    expect(() => parseAnatomy(bad, ctx)).toThrow(/row Foo = 1 is not in the excerpt/);
+  });
+
+  it("rejects a section id of struct", () => {
+    const bad = structuredClone(VALID);
+    bad.sections[0].id = "struct";
+    expect(() => parseAnatomy(bad, ctx)).toThrow(/"struct" cannot be a section id/);
+  });
+
+  it("rejects a section id of struct-name", () => {
+    const bad = structuredClone(VALID);
+    bad.sections[0].id = "struct-name";
+    expect(() => parseAnatomy(bad, ctx)).toThrow(/"struct-name" cannot be a section id/);
+  });
+
+  it("rejects a section id with a space", () => {
+    const bad = structuredClone(VALID) as unknown as Record<string, unknown>;
+    (bad.sections as Array<Record<string, unknown>>)[0].id = "tree links";
+    try {
+      parseAnatomy(bad, ctx);
+      expect.fail("expected parseAnatomy to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(z.ZodError);
+      expect(String(error)).toMatch(/pattern/i);
+    }
   });
 
   it("rejects duplicate section ids and group keys", () => {
