@@ -19,8 +19,8 @@ test.describe("Guided Trace", () => {
     await page.goto(TRACE);
     await page.getByRole("button", { name: /Step 5: Journey finds the matching route/ }).click();
     await expect(page.locator(".gt-counter")).toHaveText("Step 5 of 8 · actionpack");
-    await expect(page.locator(".gt-code pre")).toContainText("recognize(req) do |route, parameters|");
-    await expect(page.locator(".gt-lines")).toHaveText("L30–41");
+    await expect(page.locator(".code-panel pre")).toContainText("recognize(req) do |route, parameters|");
+    await expect(page.locator(".code-panel-lines")).toHaveText("L30–41");
     await expect(page.getByRole("button", { name: /Step 5:/ })).toHaveAttribute("aria-current", "step");
     await expect(page).toHaveURL(/#step-5$/);
   });
@@ -43,7 +43,7 @@ test.describe("Guided Trace", () => {
   test("a #step hash deep-links to that step", async ({ page }) => {
     await page.goto(`${TRACE}#step-8`);
     await expect(page.locator(".gt-counter")).toHaveText("Step 8 of 8 · actionpack");
-    await expect(page.locator(".gt-code pre")).toContainText("could not be found for #{self.class.name}");
+    await expect(page.locator(".code-panel pre")).toContainText("could not be found for #{self.class.name}");
   });
 
   test("shared chrome: breadcrumb, format switcher, meta chips", async ({ page }) => {
