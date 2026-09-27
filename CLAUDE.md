@@ -71,7 +71,7 @@ Dark slate theme — never pure black; cream "inverted" panels and bright per-se
 - Code excerpts must come from the **pinned commit** of the set's repo. Mark trimmed excerpts ("excerpt", "simplified", "DEV branches removed") and use `# ...` / `// ...` for elided lines.
 - Never invent commit SHAs, dates, line numbers, counts or diffs. Placeholders in the prototype look like `[SHA]`, `[DATE]`, `[n]` — fill them from git, or leave them visibly unfilled.
 - The excerpts in the prototype were written from memory of upstream code; **verify each one against the pinned commit before publishing.**
-- Local checkouts may already exist at `~/repo/rails`, `~/repo/react`, `~/repo/node` — check they are git clones of the right upstream before using them.
+- Upstream code is read from blobless clones in `.repos/<name>` (gitignored), created and updated by `pnpm repos:sync` from the pins in `content/`. Never vendor or submodule upstream repos into this repo. The user's own checkouts (`~/repo/rails`, …) may be used read-only via `REPOS_DIR`; never fetch into or modify them.
 
 ## Open decisions (yours to make)
 

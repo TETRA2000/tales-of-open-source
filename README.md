@@ -6,12 +6,17 @@ Status: Library home, Rails set home and the chapter 04 Guided Trace are built (
 
 ## Running it
 
-Needs Node 22.12+, pnpm, and a local clone of each set's repository at `$REPOS_DIR/<name>`
-(default `~/repo`, so `~/repo/rails` for `rails/rails`). Clones are only read (`git show`), never fetched or checked out;
-the pinned commit must already be in the clone.
+Needs Node 22.12+, pnpm and a recent git (tested with 2.55). The upstream repositories are not stored in this repo:
+`pnpm repos:sync` makes blobless clones of them in `.repos/<name>` (gitignored), fetches every commit pinned
+in `content/`, downloads the quoted files so builds then work offline, and checks each set's release tag
+points at its pin. `pnpm build` runs it first; it is a no-op when nothing changed.
+
+To build from clones you already have instead, set `REPOS_DIR` (e.g. `REPOS_DIR=~/repo` for `~/repo/rails`).
+Those clones are only read, never fetched into; sync just checks they contain the pinned commits.
 
 ```sh
 pnpm install
+pnpm repos:sync   # first time, and after changing a pin
 pnpm dev          # http://localhost:4321
 pnpm build        # static site in dist/; fails if any excerpt does not match its pinned source
 pnpm verify       # check every excerpt against its pin and print the line ranges

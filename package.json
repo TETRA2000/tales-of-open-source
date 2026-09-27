@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
+    "prebuild": "pnpm -s repos:sync",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "repos:sync": "node --experimental-strip-types scripts/sync-repos.ts",
     "verify": "node --experimental-strip-types scripts/verify-excerpts.ts",
     "test": "vitest run",
     "test:e2e": "playwright test"

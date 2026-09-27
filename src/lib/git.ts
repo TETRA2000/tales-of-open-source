@@ -1,9 +1,11 @@
-// Read-only access to local clones of each set's upstream repository.
-// Only `git show`, `git cat-file` and `git remote get-url` are used: nothing
-// here fetches, checks out or writes, so a user's own checkout is safe to use.
+// Read access to local clones of each set's upstream repository.
+//
+// By default the clones live in .repos/<name> inside this project and are created
+// and updated by `pnpm repos:sync` (blobless clones, see src/lib/sync.ts). Setting
+// REPOS_DIR points the build at other clones instead, such as an existing ~/repo/rails;
+// those are only read here: `git show`, `git cat-file` and `git remote get-url`.
 
 import { execFileSync } from "node:child_process";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 export type ReadAtCommit = (commit: string, file: string) => string;
@@ -13,51 +15,69 @@ export interface RepoReader {
   readAtCommit: ReadAtCommit;
 }
 
-function git(dir: string, args: string[]): string {
+export function runGit(dir: string, args: string[], env?: Record<string, string>): string {
   return execFileSync("git", ["-C", dir, ...args], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
+    env: env && { ...process.env, ...env },
   });
 }
 
-/** Local clone of `owner/name`: $REPOS_DIR/<name>, where REPOS_DIR defaults to ~/repo. */
-export function localCloneDir(repo: string, reposDir = process.env.REPOS_DIR ?? join(homedir(), "repo")): string {
+export function gitSucceeds(dir: string, args: string[], env?: Record<string, string>): boolean {
+  try {
+    runGit(dir, args, env);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the commit is in the clone itself; a partial clone must not fetch it to answer. */
+export function hasCommit(dir: string, commit: string): boolean {
+  return gitSucceeds(dir, ["cat-file", "-e", `${commit}^{commit}`], { GIT_NO_LAZY_FETCH: "1" });
+}
+
+/** The project's own clone folder, managed by `pnpm repos:sync`. */
+export const MANAGED_REPOS_DIR = join(process.cwd(), ".repos");
+
+/** Where the clones are read from: $REPOS_DIR if set, else .repos/ in this project. */
+export function reposDir(): string {
+  return process.env.REPOS_DIR ?? MANAGED_REPOS_DIR;
+}
+
+/** Local clone of `owner/name`: <reposDir>/<name>. */
+export function localCloneDir(repo: string, dir = reposDir()): string {
   const name = repo.split("/")[1];
   if (!name) throw new Error(`Expected "owner/name", got "${repo}"`);
-  return join(reposDir, name);
+  return join(dir, name);
+}
+
+export function normalizeRemote(url: string): string {
+  return url.trim().replace(/\.git$/, "").replace(/^git@github\.com:/, "https://github.com/");
 }
 
 export function openRepo(repo: string, dir = localCloneDir(repo)): RepoReader {
   let origin: string;
   try {
-    origin = git(dir, ["remote", "get-url", "origin"]).trim();
+    origin = runGit(dir, ["remote", "get-url", "origin"]);
   } catch {
-    throw new Error(`No git clone of ${repo} at ${dir}. Clone it there or set REPOS_DIR.`);
+    throw new Error(`No git clone of ${repo} at ${dir}. Run pnpm repos:sync (or set REPOS_DIR to where your clones are).`);
   }
-  const normalized = origin.replace(/\.git$/, "").replace(/^git@github\.com:/, "https://github.com/");
-  if (normalized !== `https://github.com/${repo}`) {
-    throw new Error(`${dir} is a clone of ${origin}, expected github.com/${repo}`);
+  if (normalizeRemote(origin) !== `https://github.com/${repo}`) {
+    throw new Error(`${dir} is a clone of ${origin.trim()}, expected github.com/${repo}`);
   }
 
   return {
     dir,
     readAtCommit(commit, file) {
       try {
-        return git(dir, ["show", `${commit}:${file}`]);
+        return runGit(dir, ["show", `${commit}:${file}`]);
       } catch (error) {
-        const hasCommit = (() => {
-          try {
-            git(dir, ["cat-file", "-e", `${commit}^{commit}`]);
-            return true;
-          } catch {
-            return false;
-          }
-        })();
         throw new Error(
-          hasCommit
+          hasCommit(dir, commit)
             ? `${file} does not exist in ${repo} at ${commit}`
-            : `Commit ${commit} is not in ${dir}; fetch it there first`,
+            : `Commit ${commit} is not in ${dir}; run pnpm repos:sync`,
           { cause: error },
         );
       }
