@@ -5,9 +5,9 @@ subtitle: in depth
 accent: "#F28B6D"
 repo: rails/rails
 pin:
-  commit: "[SHA]"
-  release: "[VERSION]"
-  synced_at: "[DATE]"
+  commit: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
+  release: "v8.1.4"
+  synced_at: "2026-09-27"
 blurb: How Rails turns a request into a response, and Ruby into SQL.
 description: >-
   Twelve chapters that open the framework up: how an application boots, how a request becomes a
