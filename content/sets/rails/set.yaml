@@ -3,6 +3,7 @@ id: rails
 title: Ruby on Rails
 subtitle: in depth
 accent: "#F28B6D"
+accent_hover: "#F7AE97"
 repo: rails/rails
 pin:
   commit: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"

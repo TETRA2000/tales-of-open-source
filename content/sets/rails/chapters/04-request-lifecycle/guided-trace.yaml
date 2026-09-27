@@ -1,10 +1,10 @@
-# Seed content from the design prototype.
-# VERIFY every `code` excerpt against the pinned rails/rails commit before publishing.
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "# ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
 format: GT
 title: "From socket to controller: the path of one request"
 level: practitioner
 minutes: 12
-pin: "[SHA]"
+pin: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
 example:
   request: GET /articles/42
   target: ArticlesController#show
@@ -12,12 +12,16 @@ steps:
   - id: step-1
     title: Puma hands Rails a Rack env
     symbol: config.ru
-    package: your app
-    file: config.ru
+    package: railties
+    file: railties/lib/rails/generators/rails/app/templates/config.ru.tt
+    lines: 1-6
     body: >-
-      The web server parses raw HTTP into a plain Ruby hash — the Rack env — and calls
-      #call on whatever object config.ru runs. In every Rails app, that object is Rails.application.
+      The web server parses raw HTTP into a plain Ruby hash — the Rack env — and calls #call on
+      whatever object config.ru runs. rails new writes config.ru from this template in railties,
+      so in every Rails app that object is Rails.application.
     code: |
+      # This file is used by Rack-based servers to start the application.
+
       require_relative "config/environment"
 
       run Rails.application
@@ -28,6 +32,7 @@ steps:
     symbol: Rails::Engine#call
     package: railties
     file: railties/lib/rails/engine.rb
+    lines: 532-535
     body: >-
       Rails::Application inherits #call from Rails::Engine. It wraps the env in a request object,
       then passes it to app — not your app, but the middleware stack Rails built at boot.
@@ -42,15 +47,27 @@ steps:
     symbol: DefaultMiddlewareStack#build_stack
     package: railties
     file: railties/lib/rails/application/default_middleware_stack.rb
+    lines: 14-110
     body: >-
       Each middleware is an object with #call that does a little work and calls the next one:
       host checks, static files, the executor, cookies, sessions, flash. The last link in the chain is the router.
     code: |
       def build_stack
         ActionDispatch::MiddlewareStack.new do |middleware|
-          # host authorization, static files, executor ...
+          # ... host authorization, SSL, Rack::Sendfile, static files, Rack::Cache ...
+          middleware.use ::ActionDispatch::Executor, app.executor
+
+          middleware.use ::ActionDispatch::ServerTiming if config.server_timing
+          middleware.use ::Rack::Runtime
           middleware.use ::Rack::MethodOverride unless config.api_only
-          # cookies, session, flash, ETag ...
+          # ... request id, remote IP, logger, exception pages, reloader ...
+          middleware.use ::ActionDispatch::Callbacks
+          middleware.use ::ActionDispatch::Cookies unless config.api_only
+          # ... session store, flash, content security policy ...
+          middleware.use ::Rack::Head
+          middleware.use ::Rack::ConditionalGet
+          middleware.use ::Rack::ETag, "no-cache"
+          # ... tempfile reaper, database selectors ...
         end
       end
     next: Rails.application.routes.call(env)
@@ -59,6 +76,7 @@ steps:
     symbol: RouteSet#call
     package: actionpack
     file: actionpack/lib/action_dispatch/routing/route_set.rb
+    lines: 903-907
     body: >-
       routes.rb compiled into a RouteSet at boot. Its #call builds an ActionDispatch::Request,
       tidies the path, and hands the request to the Journey router — the engine that actually matches URLs.
@@ -74,23 +92,25 @@ steps:
     symbol: Journey::Router#serve
     package: actionpack
     file: actionpack/lib/action_dispatch/journey/router.rb
+    lines: 30-41
     body: >-
-      find_routes walks the compiled route table. For /articles/42 it yields the articles#show route
-      plus the captured parameters, which are merged into path_parameters — this is where params[:id] is born.
+      recognize filters the compiled route table down to the routes that match this request and yields
+      each one with its parameters: the route's defaults (controller "articles", action "show") merged with
+      what the path captured (id "42"). serve stores them as path_parameters — this is where params[:id]
+      is born — and calls the route's app. If that app answers X-Cascade: pass, the next matching route
+      gets its turn; when none is left, the answer is a 404.
     code: |
       def serve(req)
-        find_routes(req) do |match, parameters, route|
-          set_params = req.path_parameters
-          # ... script_name / path_info bookkeeping ...
-          tmp_params = set_params.merge route.defaults
-          parameters.each_pair { |key, val|
-            tmp_params[key] = val.force_encoding(::Encoding::UTF_8)
-          }
-          req.path_parameters = tmp_params
+        recognize(req) do |route, parameters|
+          req.path_parameters = parameters
+          req.route = route
 
           _, headers, _ = response = route.app.serve(req)
-          # ... X-Cascade handling ...
+
+          return response unless headers[Constants::X_CASCADE] == "pass"
         end
+
+        [404, { Constants::X_CASCADE => "pass" }, ["Not Found"]]
       end
     next: route.app.serve(req) → Dispatcher
   - id: step-6
@@ -98,6 +118,7 @@ steps:
     symbol: RouteSet::Dispatcher#serve
     package: actionpack
     file: actionpack/lib/action_dispatch/routing/route_set.rb
+    lines: 46-57
     body: >-
       The route's endpoint is a Dispatcher. It turns "articles" into ArticlesController, asks the
       controller class for a fresh response, and calls dispatch with the action name.
@@ -116,6 +137,7 @@ steps:
     symbol: ActionController::Metal#dispatch
     package: actionpack
     file: actionpack/lib/action_controller/metal.rb
+    lines: 249-255
     body: >-
       A new controller instance is created for every request. dispatch stores the request and response
       on it, runs process, commits the flash, and finally returns the Rack triple [status, headers, body].
@@ -133,6 +155,7 @@ steps:
     symbol: AbstractController::Base#process
     package: actionpack
     file: actionpack/lib/abstract_controller/base.rb
+    lines: 145-155
     body: >-
       process finds the method, then process_action runs your before_action callbacks around it.
       The action is called with send; if it did not render or redirect, ImplicitRender calls
@@ -142,7 +165,7 @@ steps:
         @_action_name = action.to_s
 
         unless action_name = _find_action_name(@_action_name)
-          raise ActionNotFound.new(...)
+          raise ActionNotFound.new("The action '#{action}' could not be found for #{self.class.name}", self, action)
         end
 
         @_response_body = nil
@@ -151,6 +174,7 @@ steps:
       end
     next: ArticlesController#show → ActionView
 tracked_symbols:
+  - { symbol: "config.ru", file: railties/lib/rails/generators/rails/app/templates/config.ru.tt, used_in: step-1 }
   - { symbol: "Rails::Engine#call", file: railties/lib/rails/engine.rb, used_in: step-2 }
   - { symbol: "DefaultMiddlewareStack#build_stack", file: railties/lib/rails/application/default_middleware_stack.rb, used_in: step-3 }
   - { symbol: "RouteSet#call", file: actionpack/lib/action_dispatch/routing/route_set.rb, used_in: step-4 }
