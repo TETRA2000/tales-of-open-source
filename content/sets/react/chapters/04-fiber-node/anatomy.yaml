@@ -90,7 +90,8 @@ struct:
       fields: [lanes, childLanes]
       what: >-
         Bitmasks of pending update priorities: lanes for this fiber, childLanes for everything below it. When
-        childLanes shares no lane with the render in progress, React skips the whole subtree.
+        this fiber has no work of its own and its childLanes share no lane with the render in progress, React
+        skips the whole subtree.
     - key: MD
       name: Mode and refs
       fields: [mode, ref, refCleanup]
@@ -112,8 +113,9 @@ sections:
       A fiber points only to its first child; the other children hang off that child's sibling pointer, one
       after another, and every fiber points back to its parent through return. The work loop walks this shape
       without recursion: beginWork hands back a fiber's child as the next unit of work, and when there is
-      none, completeUnitOfWork moves on to the sibling or climbs through return. Because each step is one
-      fiber, the concurrent loop can stop between any two fibers to yield, and later pick up where it left off.
+      none, completeUnitOfWork finishes it and moves on to its sibling, or climbs through return, finishing
+      each parent, until it finds a sibling or has finished the root. The concurrent loop checks whether to yield
+      after each unit of work, so it can stop there and later pick up where it left off.
     jsx: |
       <App>
         <Header />
@@ -191,4 +193,9 @@ sections:
 tracked_symbols:
   - { symbol: FiberNode, file: packages/react-reconciler/src/ReactFiber.js, used_in: struct }
   - { symbol: createWorkInProgress, file: packages/react-reconciler/src/ReactFiber.js, used_in: double-buffering }
-  - { symbol: WorkTag, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
+  - { symbol: FunctionComponent, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
+  - { symbol: ClassComponent, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
+  - { symbol: HostRoot, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
+  - { symbol: HostComponent, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
+  - { symbol: HostText, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
+  - { symbol: Fragment, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }
