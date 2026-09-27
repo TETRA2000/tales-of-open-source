@@ -1,0 +1,22 @@
+format: GT
+title: One call
+level: practitioner
+minutes: 5
+example: { request: Demo.call, target: Thing#call }
+steps:
+  - id: step-1
+    title: Thing answers call
+    symbol: Thing#call
+    package: demo
+    file: lib/demo.rb
+    lines: 3-8
+    body: It adds.
+    code: |
+      def call(env)
+        a = 1
+        # ...
+        a + b
+      end
+    next: done
+tracked_symbols:
+  - { symbol: "Thing#call", file: lib/demo.rb, used_in: step-1 }

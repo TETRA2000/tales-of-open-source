@@ -1,0 +1,19 @@
+id: demo
+title: Demo
+subtitle: in depth
+accent: "#F28B6D"
+repo: example/demo
+pin:
+  commit: "1111111111111111111111111111111111111111"
+  release: v1.0.0
+  synced_at: "2026-01-01"
+blurb: A fixture set.
+description: Two chapters, one written.
+paths:
+  - { level: newcomer, name: Short, formats: [QT], what: Quick tales. }
+parts:
+  - num: I
+    title: Start
+    chapters:
+      - { id: 01-map, title: The map, path_hint: lib/, formats: [FG] }
+      - { id: 02-call, title: The call, path_hint: lib/demo.rb, formats: [QT, GT] }

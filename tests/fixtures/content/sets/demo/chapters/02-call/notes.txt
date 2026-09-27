@@ -1,0 +1,1 @@
+Unrelated files in a chapter folder are ignored.
