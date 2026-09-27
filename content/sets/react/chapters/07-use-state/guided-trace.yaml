@@ -1,0 +1,559 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "// ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "useState, then setCount: where state lives and how an update finds it"
+level: practitioner
+minutes: 15
+pin: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+example:
+  label: The state we follow
+  request: "const [count, setCount] = useState(0); <button onClick={() => setCount(c => c + 1)}>"
+  target: "Counter renders again with count 1"
+steps:
+  - id: step-1
+    title: useState is a forwarder
+    symbol: useState
+    package: react
+    file: packages/react/src/ReactHooks.js
+    lines: 66-71
+    body: >-
+      The react package holds no hook logic at all. resolveDispatcher reads ReactSharedInternals.H — an
+      object the renderer swaps in only while a function component is rendering. Anywhere else the slot holds
+      null or ContextOnlyDispatcher, whose hooks throw the “Invalid hook call” error.
+    code: |
+      export function useState<S>(
+        initialState: (() => S) | S,
+      ): [S, Dispatch<BasicStateAction<S>>] {
+        const dispatcher = resolveDispatcher();
+        return dispatcher.useState(initialState);
+      }
+    next: ReactSharedInternals.H was set by renderWithHooks
+  - id: step-2
+    title: renderWithHooks picks mount or update hooks
+    symbol: renderWithHooks
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 505-634
+    body: >-
+      Called from updateFunctionComponent for every function component. It points the module-level
+      currentlyRenderingFiber at this fiber, clears the hook list it is about to rebuild, and installs a
+      dispatcher. No current fiber, or one with no hooks, means mount; otherwise update. Then the component
+      is simply called.
+    code: |
+      export function renderWithHooks<Props, SecondArg>(
+        current: Fiber | null,
+        workInProgress: Fiber,
+        Component: (p: Props, arg: SecondArg) => any,
+        props: Props,
+        secondArg: SecondArg,
+        nextRenderLanes: Lanes,
+      ): any {
+        renderLanes = nextRenderLanes;
+        currentlyRenderingFiber = workInProgress;
+        // ... DEV hook-order tracking
+        workInProgress.memoizedState = null;
+        workInProgress.updateQueue = null;
+        workInProgress.lanes = NoLanes;
+        // ... comments
+        if (__DEV__) {
+          // ... the same choice, with DEV-checking dispatchers
+        } else {
+          ReactSharedInternals.H =
+            current === null || current.memoizedState === null
+              ? HooksDispatcherOnMount
+              : HooksDispatcherOnUpdate;
+        }
+        // ... comment on Strict Mode double rendering
+        const shouldDoubleRenderDEV =
+          __DEV__ && (workInProgress.mode & StrictLegacyMode) !== NoMode;
+
+        shouldDoubleInvokeUserFnsInHooksDEV = shouldDoubleRenderDEV;
+        let children = __DEV__
+          ? callComponentInDEV(Component, props, secondArg)
+          : Component(props, secondArg);
+        shouldDoubleInvokeUserFnsInHooksDEV = false;
+        // ... re-render while render-phase updates keep coming; Strict Mode second call
+        finishRenderingHooks(current, workInProgress, Component);
+
+        return children;
+      }
+    next: HooksDispatcherOnMount.useState → mountState(0)
+  - id: step-3
+    title: The setter is bound once, at mount
+    symbol: mountState
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 1948-1960
+    body: >-
+      setCount is dispatchSetState with the fiber and the hook's queue already bound. It is created once
+      and stored on the queue, and every later render returns the same function — which is why setters are
+      stable and safe to leave out of effect dependencies.
+    code: |
+      function mountState<S>(
+        initialState: (() => S) | S,
+      ): [S, Dispatch<BasicStateAction<S>>] {
+        const hook = mountStateImpl(initialState);
+        const queue = hook.queue;
+        const dispatch: Dispatch<BasicStateAction<S>> = dispatchSetState.bind(
+          null,
+          currentlyRenderingFiber,
+          queue,
+        ) as any;
+        queue.dispatch = dispatch;
+        return [hook.memoizedState, dispatch];
+      }
+    next: mountStateImpl(0)
+  - id: step-4
+    title: A hook is state plus a queue
+    symbol: mountStateImpl
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 1920-1946
+    body: >-
+      A lazy initializer is called here and only here. The hook keeps memoizedState (what render returns)
+      and baseState (where to restart when low-priority updates were skipped). The queue remembers the
+      reducer and state of the last render: useState is useReducer with basicStateReducer, which applies a
+      function or takes a value.
+    code: |
+      function mountStateImpl<S>(initialState: (() => S) | S): Hook {
+        const hook = mountWorkInProgressHook();
+        if (typeof initialState === 'function') {
+          const initialStateInitializer = initialState;
+          // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types
+          initialState = initialStateInitializer();
+          if (shouldDoubleInvokeUserFnsInHooksDEV) {
+            setIsStrictModeForDevtools(true);
+            try {
+              // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types
+              initialStateInitializer();
+            } finally {
+              setIsStrictModeForDevtools(false);
+            }
+          }
+        }
+        hook.memoizedState = hook.baseState = initialState;
+        const queue: UpdateQueue<S, BasicStateAction<S>> = {
+          pending: null,
+          lanes: NoLanes,
+          dispatch: null,
+          lastRenderedReducer: basicStateReducer,
+          lastRenderedState: initialState as any,
+        };
+        hook.queue = queue;
+        return hook;
+      }
+    next: mountWorkInProgressHook()
+  - id: step-5
+    title: Hooks are a linked list on the fiber
+    symbol: mountWorkInProgressHook
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 983-1002
+    body: >-
+      The fiber's memoizedState points at the first hook, and each hook points at the next. There are no
+      names or ids: a hook is identified only by its position in call order. That is the whole reason hooks
+      cannot be called conditionally.
+    code: |
+      function mountWorkInProgressHook(): Hook {
+        const hook: Hook = {
+          memoizedState: null,
+
+          baseState: null,
+          baseQueue: null,
+          queue: null,
+
+          next: null,
+        };
+
+        if (workInProgressHook === null) {
+          // This is the first hook in the list
+          currentlyRenderingFiber.memoizedState = workInProgressHook = hook;
+        } else {
+          // Append to the end of the list
+          workInProgressHook = workInProgressHook.next = hook;
+        }
+        return workInProgressHook;
+      }
+    next: "Later, the click: setCount(c => c + 1)"
+  - id: step-6
+    title: A click asks for SyncLane
+    symbol: dispatchSetState
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 3626-3654
+    body: >-
+      The click reached React through its root listener, which sets the current update priority to
+      DiscreteEventPriority before calling handlers. requestUpdateLane (chapter 03) returns that priority as
+      a lane: SyncLane. A setState inside startTransition would get a transition lane instead.
+    code: |
+      function dispatchSetState<S, A>(
+        fiber: Fiber,
+        queue: UpdateQueue<S, A>,
+        action: A,
+      ): void {
+        // ... DEV warning about a second callback argument
+        const lane = requestUpdateLane(fiber);
+        const didScheduleUpdate = dispatchSetStateInternal(
+          fiber,
+          queue,
+          action,
+          lane,
+        );
+        if (didScheduleUpdate) {
+          startUpdateTimerByLane(lane, 'setState()', fiber);
+        }
+        markUpdateInDevTools(fiber, lane, action);
+      }
+    next: dispatchSetStateInternal(fiber, queue, c => c + 1, SyncLane)
+  - id: step-7
+    title: Compute the new state early, if it is safe to
+    symbol: dispatchSetStateInternal
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 3656-3726
+    body: >-
+      If neither copy of the fiber has pending work, React runs the reducer right now: 0 becomes 1. Had the
+      result equalled the current state (by Object.is), the update would be queued without scheduling a
+      render at all. It differs, so the update — carrying its eager result — is enqueued and the root is
+      scheduled.
+    code: |
+      function dispatchSetStateInternal<S, A>(
+        fiber: Fiber,
+        queue: UpdateQueue<S, A>,
+        action: A,
+        lane: Lane,
+      ): boolean {
+        const update: Update<S, A> = {
+          lane,
+          revertLane: NoLane,
+          gesture: null,
+          action,
+          hasEagerState: false,
+          eagerState: null,
+          next: null as any,
+        };
+
+        if (isRenderPhaseUpdate(fiber)) {
+          enqueueRenderPhaseUpdate(queue, update);
+        } else {
+          const alternate = fiber.alternate;
+          if (
+            fiber.lanes === NoLanes &&
+            (alternate === null || alternate.lanes === NoLanes)
+          ) {
+            // The queue is currently empty, which means we can eagerly compute the
+            // next state before entering the render phase. If the new state is the
+            // same as the current state, we may be able to bail out entirely.
+            const lastRenderedReducer = queue.lastRenderedReducer;
+            if (lastRenderedReducer !== null) {
+              // ... DEV: forbid hooks inside the reducer
+              try {
+                const currentState: S = queue.lastRenderedState as any;
+                const eagerState = lastRenderedReducer(currentState, action);
+                // ... comment
+                update.hasEagerState = true;
+                update.eagerState = eagerState;
+                if (is(eagerState, currentState)) {
+                  // Fast path. We can bail out without scheduling React to re-render.
+                  // ... comment
+                  enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
+                  return false;
+                }
+              } catch (error) {
+                // Suppress the error. It will throw again in the render phase.
+              } finally {
+                // ... DEV: restore the dispatcher
+              }
+            }
+          }
+
+          const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
+          if (root !== null) {
+            scheduleUpdateOnFiber(root, fiber, lane);
+            entangleTransitionUpdate(root, queue, lane);
+            return true;
+          }
+        }
+        return false;
+      }
+    next: enqueueConcurrentHookUpdate(fiber, queue, update, SyncLane)
+  - id: step-8
+    title: The update waits in a flat array
+    symbol: enqueueConcurrentHookUpdate
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberConcurrentUpdates.js
+    lines: 90-125
+    body: >-
+      The update is not put on the hook's queue yet: a render could be in progress, and it must not see a
+      half-applied queue. Instead (fiber, queue, update, lane) is pushed onto a module-level array. The
+      fiber's own lanes are set immediately, and the root is found by walking return pointers to the
+      HostRoot.
+    code: |
+      function enqueueUpdate(
+        fiber: Fiber,
+        queue: ConcurrentQueue | null,
+        update: ConcurrentUpdate | null,
+        lane: Lane,
+      ) {
+        // Don't update the `childLanes` on the return path yet. If we already in
+        // the middle of rendering, wait until after it has completed.
+        concurrentQueues[concurrentQueuesIndex++] = fiber;
+        concurrentQueues[concurrentQueuesIndex++] = queue;
+        concurrentQueues[concurrentQueuesIndex++] = update;
+        concurrentQueues[concurrentQueuesIndex++] = lane;
+
+        concurrentlyUpdatedLanes = mergeLanes(concurrentlyUpdatedLanes, lane);
+
+        // The fiber's `lane` field is used in some places to check if any work is
+        // scheduled, to perform an eager bailout, so we need to update it immediately.
+        // TODO: We should probably move this to the "shared" queue instead.
+        fiber.lanes = mergeLanes(fiber.lanes, lane);
+        const alternate = fiber.alternate;
+        if (alternate !== null) {
+          alternate.lanes = mergeLanes(alternate.lanes, lane);
+        }
+      }
+
+      export function enqueueConcurrentHookUpdate<S, A>(
+        fiber: Fiber,
+        queue: HookQueue<S, A>,
+        update: HookUpdate<S, A>,
+        lane: Lane,
+      ): FiberRoot | null {
+        const concurrentQueue: ConcurrentQueue = queue as any;
+        const concurrentUpdate: ConcurrentUpdate = update as any;
+        enqueueUpdate(fiber, concurrentQueue, concurrentUpdate, lane);
+        return getRootForUpdatedFiber(fiber);
+      }
+    next: scheduleUpdateOnFiber → ensureRootIsScheduled → microtask
+  - id: step-9
+    title: SyncLane is rendered at the end of the microtask
+    symbol: flushSyncWorkAcrossRoots_impl
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRootScheduler.js
+    lines: 185-247
+    body: >-
+      As in chapter 03, the root is scheduled from a microtask, but this time getNextLanes returns SyncLane,
+      so no Scheduler task is created. At the end of that same microtask this function renders every root
+      with sync work, before the browser gets a chance to paint. Every setState from the same click handler
+      is already queued by then, so they share one render.
+    code: |
+      function flushSyncWorkAcrossRoots_impl(
+        syncTransitionLanes: Lanes | Lane,
+        onlyLegacy: boolean,
+      ) {
+        if (isFlushingWork) {
+          // Prevent reentrancy.
+          // ... TODO comment
+          return;
+        }
+
+        if (!mightHavePendingSyncWork) {
+          // Fast path. There's no sync work to do.
+          return;
+        }
+
+        // There may or may not be synchronous work scheduled. Let's check.
+        let didPerformSomeWork;
+        isFlushingWork = true;
+        do {
+          didPerformSomeWork = false;
+          let root = firstScheduledRoot;
+          while (root !== null) {
+            if (onlyLegacy && (disableLegacyMode || root.tag !== LegacyRoot)) {
+              // Skip non-legacy roots.
+            } else {
+              if (syncTransitionLanes !== NoLanes) {
+                // ... transitions forced to render synchronously
+              } else {
+                // ... work-in-progress root and pending commit
+                const nextLanes = getNextLanes(
+                  root,
+                  root === workInProgressRoot
+                    ? workInProgressRootRenderLanes
+                    : NoLanes,
+                  rootHasPendingCommit,
+                );
+                if (
+                  (includesSyncLane(nextLanes) ||
+                    (enableGestureTransition && isGestureRender(nextLanes))) &&
+                  !checkIfRootIsPrerendering(root, nextLanes)
+                ) {
+                  // This root has pending sync work. Flush it now.
+                  didPerformSomeWork = true;
+                  performSyncWorkOnRoot(root, nextLanes);
+                }
+              }
+            }
+            root = root.next;
+          }
+        } while (didPerformSomeWork);
+        isFlushingWork = false;
+      }
+    next: performSyncWorkOnRoot → performWorkOnRoot → prepareFreshStack
+  - id: step-10
+    title: The update joins the hook's circular queue
+    symbol: finishQueueingConcurrentUpdates
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberConcurrentUpdates.js
+    lines: 50-84
+    body: >-
+      prepareFreshStack drains the array. queue.pending always points at the last update of a circular
+      list, so pending.next is the first. markUpdateLaneFromFiberToRoot then ORs the lane into childLanes on
+      every ancestor: that is how beginWork, working down from the root, knows which subtrees can be skipped
+      and which one leads to Counter.
+    code: |
+      export function finishQueueingConcurrentUpdates(): void {
+        const endIndex = concurrentQueuesIndex;
+        concurrentQueuesIndex = 0;
+
+        concurrentlyUpdatedLanes = NoLanes;
+
+        let i = 0;
+        while (i < endIndex) {
+          const fiber: Fiber = concurrentQueues[i];
+          concurrentQueues[i++] = null;
+          const queue: ConcurrentQueue = concurrentQueues[i];
+          concurrentQueues[i++] = null;
+          const update: ConcurrentUpdate = concurrentQueues[i];
+          concurrentQueues[i++] = null;
+          const lane: Lane = concurrentQueues[i];
+          concurrentQueues[i++] = null;
+
+          // $FlowFixMe[invalid-compare]
+          if (queue !== null && update !== null) {
+            const pending = queue.pending;
+            if (pending === null) {
+              // This is the first update. Create a circular list.
+              update.next = update;
+            } else {
+              update.next = pending.next;
+              pending.next = update;
+            }
+            queue.pending = update;
+          }
+
+          if (lane !== NoLane) {
+            markUpdateLaneFromFiberToRoot(fiber, update, lane);
+          }
+        }
+      }
+    next: "Counter re-renders: HooksDispatcherOnUpdate.useState → updateState → updateReducer"
+  - id: step-11
+    title: On update, hooks are cloned in call order
+    symbol: updateReducer
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 1307-1314
+    body: >-
+      updateState is updateReducer with basicStateReducer. updateWorkInProgressHook advances two cursors
+      together — one through the current fiber's hook list, one through the list being built — and copies
+      the next current hook. Rendering more hooks than last time runs off the end of the current list and
+      throws “Rendered more hooks than during the previous render”.
+    code: |
+      function updateReducer<S, I, A>(
+        reducer: (S, A) => S,
+        initialArg: I,
+        init?: I => S,
+      ): [S, Dispatch<A>] {
+        const hook = updateWorkInProgressHook();
+        return updateReducerImpl(hook, currentHook as any as Hook, reducer);
+      }
+    next: updateReducerImpl(hook, currentHook, basicStateReducer)
+  - id: step-12
+    title: Replay the queue to get the new state
+    symbol: updateReducerImpl
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberHooks.js
+    lines: 1316-1589
+    body: >-
+      Pending updates are moved to the base queue and replayed in order from baseState. Updates whose lane
+      is not in this render are skipped but kept, so a later render can replay them on top of the right base.
+      Our update has the eager state computed in step 7, so the reducer is not called again: count is 1.
+      Because 1 differs from 0, the fiber is marked as having received an update, and its children are
+      reconciled rather than bailed out.
+    code: |
+      function updateReducerImpl<S, A>(
+        hook: Hook,
+        current: Hook,
+        reducer: (S, A) => S,
+      ): [S, Dispatch<A>] {
+        const queue = hook.queue;
+        // ... throw if there is no queue (a hook was called conditionally)
+        queue.lastRenderedReducer = reducer;
+
+        // The last rebase update that is NOT part of the base state.
+        let baseQueue = hook.baseQueue;
+
+        // The last pending update that hasn't been processed yet.
+        const pendingQueue = queue.pending;
+        if (pendingQueue !== null) {
+          // ... splice the pending circular list into the base queue
+          current.baseQueue = baseQueue = pendingQueue;
+          queue.pending = null;
+        }
+
+        const baseState = hook.baseState;
+        if (baseQueue === null) {
+          // ... nothing to process
+        } else {
+          // We have a queue to process.
+          const first = baseQueue.next;
+          let newState = baseState;
+          // ... new base state and base queue for skipped updates
+          let update = first;
+          let didReadFromEntangledAsyncAction = false;
+          do {
+            // ... is this update's lane part of this render?
+            if (shouldSkipUpdate) {
+              // ... not enough priority: keep a clone in the new base queue
+            } else {
+              // ... optimistic updates and async actions
+              // Process this update.
+              const action = update.action;
+              if (shouldDoubleInvokeUserFnsInHooksDEV) {
+                reducer(newState, action);
+              }
+              if (update.hasEagerState) {
+                // If this update is a state update (not a reducer) and was processed eagerly,
+                // we can use the eagerly computed state
+                newState = update.eagerState as any as S;
+              } else {
+                newState = reducer(newState, action);
+              }
+            }
+            update = update.next;
+            // $FlowFixMe[invalid-compare]
+          } while (update !== null && update !== first);
+          // ... close the new base queue
+          // Mark that the fiber performed work, but only if the new state is
+          // different from the current state.
+          if (!is(newState, hook.memoizedState)) {
+            markWorkInProgressReceivedUpdate();
+            // ... suspend on a pending async action
+          }
+
+          hook.memoizedState = newState;
+          hook.baseState = newBaseState;
+          hook.baseQueue = newBaseQueueLast;
+
+          queue.lastRenderedState = newState;
+        }
+        // ... reset queue.lanes once the queue is empty
+        const dispatch: Dispatch<A> = queue.dispatch as any;
+        return [hook.memoizedState, dispatch];
+      }
+    next: "Counter returns JSX with count = 1 → reconcileChildren"
+tracked_symbols:
+  - { symbol: useState, file: packages/react/src/ReactHooks.js, used_in: step-1 }
+  - { symbol: renderWithHooks, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-2 }
+  - { symbol: mountState, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-3 }
+  - { symbol: mountStateImpl, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-4 }
+  - { symbol: mountWorkInProgressHook, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-5 }
+  - { symbol: dispatchSetState, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-6 }
+  - { symbol: dispatchSetStateInternal, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-7 }
+  - { symbol: enqueueConcurrentHookUpdate, file: packages/react-reconciler/src/ReactFiberConcurrentUpdates.js, used_in: step-8 }
+  - { symbol: flushSyncWorkAcrossRoots_impl, file: packages/react-reconciler/src/ReactFiberRootScheduler.js, used_in: step-9 }
+  - { symbol: finishQueueingConcurrentUpdates, file: packages/react-reconciler/src/ReactFiberConcurrentUpdates.js, used_in: step-10 }
+  - { symbol: updateReducer, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-11 }
+  - { symbol: updateReducerImpl, file: packages/react-reconciler/src/ReactFiberHooks.js, used_in: step-12 }

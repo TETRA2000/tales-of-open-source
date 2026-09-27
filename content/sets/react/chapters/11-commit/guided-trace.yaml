@@ -1,0 +1,519 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "// ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "commitRoot: putting the finished tree into the document"
+level: practitioner
+minutes: 13
+pin: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+example:
+  label: The commit we follow
+  request: "the first render of root.render(<App />), where App returns <h1>Hello</h1>"
+  target: "<h1>Hello</h1> inside #root, and root.current pointing at the new tree"
+steps:
+  - id: step-1
+    title: The commit runs its phases back to back
+    symbol: commitRoot
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 3725-3922
+    body: >-
+      Rendering could be interrupted; committing cannot. markRootFinished clears the rendered lanes from
+      the root, keeping any that still have work. Passive effects are booked for later (chapter 08). Then
+      each phase is a separate walk of the finished tree: before-mutation (getSnapshotBeforeUpdate),
+      mutation, layout. When a <ViewTransition> is involved, the same phases run inside
+      document.startViewTransition instead.
+    code: |
+      function commitRoot(
+        root: FiberRoot,
+        finishedWork: Fiber,
+        lanes: Lanes,
+        spawnedLane: Lane,
+        updatedLanes: Lanes,
+        suspendedRetryLanes: Lanes,
+        suspendedState: null | SuspendedState,
+        suspendedCommitReason: SuspendedCommitReason, // Profiling-only
+        completedRenderEndTime: number, // Profiling-only
+      ) {
+        // Check which lanes no longer have any work scheduled on them, and mark
+        // those as finished.
+        let remainingLanes = mergeLanes(finishedWork.lanes, finishedWork.childLanes);
+        // ... keep lanes updated by a concurrent event; drop the gesture lane
+        markRootFinished(
+          root,
+          lanes,
+          remainingLanes,
+          spawnedLane,
+          updatedLanes,
+          suspendedRetryLanes,
+        );
+        // ... schedule passive effects (chapter 08); profiling; comments
+        const subtreeHasBeforeMutationEffects =
+          (finishedWork.subtreeFlags & (BeforeMutationMask | MutationMask)) !==
+          NoFlags;
+        const rootHasBeforeMutationEffect =
+          (finishedWork.flags & (BeforeMutationMask | MutationMask)) !== NoFlags;
+
+        if (subtreeHasBeforeMutationEffects || rootHasBeforeMutationEffect) {
+          // ... enter CommitContext at DiscreteEventPriority
+            commitBeforeMutationEffects(root, finishedWork, lanes);
+          // ... restore the context and priority
+        }
+        // ... gestures
+        pendingEffectsStatus = PENDING_MUTATION_PHASE;
+        if (enableViewTransition && shouldStartViewTransition) {
+          // ... run the same phases inside startViewTransition
+        } else {
+          // Flush synchronously.
+          flushMutationEffects();
+          flushLayoutEffects();
+          // Skip flushAfterMutationEffects
+          flushSpawnedWork();
+        }
+      }
+    next: flushMutationEffects()
+  - id: step-2
+    title: Mutate the DOM, then swap the trees
+    symbol: flushMutationEffects
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 4009-4053
+    body: >-
+      The commit's inputs were saved in module-level pendingEffects* variables so each phase can also run
+      later, from a View Transition callback. After the DOM is mutated, root.current is switched to the
+      finished tree: from now on the work-in-progress tree is the current one, and the old current fibers
+      become the alternates the next render will reuse.
+    code: |
+      function flushMutationEffects(): void {
+        if (pendingEffectsStatus !== PENDING_MUTATION_PHASE) {
+          return;
+        }
+        pendingEffectsStatus = NO_PENDING_EFFECTS;
+
+        const root = pendingEffectsRoot;
+        const finishedWork = pendingFinishedWork;
+        const lanes = pendingEffectsLanes;
+        const subtreeMutationHasEffects =
+          (finishedWork.subtreeFlags & MutationMask) !== NoFlags;
+        const rootMutationHasEffect = (finishedWork.flags & MutationMask) !== NoFlags;
+
+        if (subtreeMutationHasEffects || rootMutationHasEffect) {
+          const prevTransition = ReactSharedInternals.T;
+          ReactSharedInternals.T = null;
+          const previousPriority = getCurrentUpdatePriority();
+          setCurrentUpdatePriority(DiscreteEventPriority);
+          const prevExecutionContext = executionContext;
+          executionContext |= CommitContext;
+          try {
+            // The next phase is the mutation phase, where we mutate the host tree.
+            commitMutationEffects(root, finishedWork, lanes);
+
+            if (enableCreateEventHandleAPI) {
+              if (shouldFireAfterActiveInstanceBlur) {
+                afterActiveInstanceBlur();
+              }
+            }
+            resetAfterCommit(root.containerInfo);
+          } finally {
+            // Reset the priority to the previous non-sync value.
+            executionContext = prevExecutionContext;
+            setCurrentUpdatePriority(previousPriority);
+            ReactSharedInternals.T = prevTransition;
+          }
+        }
+
+        // The work-in-progress tree is now the current tree. This must come after
+        // the mutation phase, so that the previous tree is still current during
+        // componentWillUnmount, but before the layout phase, so that the finished
+        // work is current during componentDidMount/Update.
+        root.current = finishedWork;
+        pendingEffectsStatus = PENDING_LAYOUT_PHASE;
+      }
+    next: commitMutationEffects(root, finishedWork, lanes)
+  - id: step-3
+    title: The walk starts at the HostRoot fiber
+    symbol: commitMutationEffects
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberCommitWork.js
+    lines: 2027-2044
+    body: >-
+      A thin entry point: remember the root and lanes being committed in module state, then start the
+      recursive walk at the finished HostRoot fiber.
+    code: |
+      export function commitMutationEffects(
+        root: FiberRoot,
+        finishedWork: Fiber,
+        committedLanes: Lanes,
+      ) {
+        inProgressLanes = committedLanes;
+        inProgressRoot = root;
+
+        rootViewTransitionAffected = false;
+        inUpdateViewTransition = false;
+
+        resetComponentEffectTimers();
+
+        commitMutationEffectsOnFiber(finishedWork, root, committedLanes);
+
+        inProgressLanes = null;
+        inProgressRoot = null;
+      }
+    next: commitMutationEffectsOnFiber(HostRoot fiber) → recursivelyTraverseMutationEffects
+  - id: step-4
+    title: Deletions first, and only where flags say so
+    symbol: recursivelyTraverseMutationEffects
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberCommitWork.js
+    lines: 2046-2068
+    body: >-
+      Every fiber case calls this before its own work. A parent's deletions are handled before its
+      children's effects. Then the walk descends only if subtreeFlags has a mutation bit: an unchanged
+      subtree costs one bitwise AND. On our first render the only Placement is on App.
+    code: |
+      function recursivelyTraverseMutationEffects(
+        root: FiberRoot,
+        parentFiber: Fiber,
+        lanes: Lanes,
+      ) {
+        // Deletions effects can be scheduled on any fiber type. They need to happen
+        // before the children effects have fired.
+        const deletions = parentFiber.deletions;
+        if (deletions !== null) {
+          for (let i = 0; i < deletions.length; i++) {
+            const childToDelete = deletions[i];
+            commitDeletionEffects(root, parentFiber, childToDelete);
+          }
+        }
+
+        if (parentFiber.subtreeFlags & (MutationMask | Cloned)) {
+          let child = parentFiber.child;
+          while (child !== null) {
+            commitMutationEffectsOnFiber(child, root, lanes);
+            child = child.sibling;
+          }
+        }
+      }
+    next: commitMutationEffectsOnFiber(App fiber)
+  - id: step-5
+    title: A function component has nothing to mutate itself
+    symbol: commitMutationEffectsOnFiber
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberCommitWork.js
+    lines: 2072-2128
+    body: >-
+      The big switch on the fiber's tag. For a function component: recurse into the children, apply
+      reconciliation effects — insertions and moves — for this fiber, and, if it has the Update flag, run
+      useInsertionEffect and the cleanups of changed useLayoutEffects. Host components add their own
+      attribute and text updates in their case of the same switch.
+    code: |
+      function commitMutationEffectsOnFiber(
+        finishedWork: Fiber,
+        root: FiberRoot,
+        lanes: Lanes,
+      ) {
+        // ... profiler timers
+        const current = finishedWork.alternate;
+        const flags = finishedWork.flags;
+
+        // The effect flag should be checked *after* we refine the type of fiber,
+        // because the fiber tag is more specific. An exception is any flag related
+        // to reconciliation, because those can be set on all fiber types.
+        switch (finishedWork.tag) {
+          case FunctionComponent:
+          case ForwardRef:
+          case MemoComponent:
+          case SimpleMemoComponent: {
+            // ... useEffectEvent callbacks
+            recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+            commitReconciliationEffects(finishedWork, lanes);
+
+            if (flags & Update) {
+              commitHookEffectListUnmount(
+                HookInsertion | HookHasEffect,
+                finishedWork,
+                finishedWork.return,
+              );
+              // TODO: Use a commitHookInsertionUnmountEffects wrapper to record timings.
+              commitHookEffectListMount(HookInsertion | HookHasEffect, finishedWork);
+              commitHookLayoutUnmountEffects(
+                finishedWork,
+                finishedWork.return,
+                HookLayout | HookHasEffect,
+              );
+            }
+            break;
+          }
+    next: commitReconciliationEffects(App fiber)
+  - id: step-6
+    title: Placement is handled for every kind of fiber
+    symbol: commitReconciliationEffects
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberCommitWork.js
+    lines: 2845-2864
+    body: >-
+      Placement means “insert or move this fiber's DOM”. It runs after the children's effects, so the
+      subtree is complete before it goes in, and the flag is cleared once done.
+    code: |
+      function commitReconciliationEffects(
+        finishedWork: Fiber,
+        committedLanes: Lanes,
+      ) {
+        // Placement effects (insertions, reorders) can be scheduled on any fiber
+        // type. They needs to happen after the children effects have fired, but
+        // before the effects on this fiber have fired.
+        const flags = finishedWork.flags;
+        if (flags & Placement) {
+          commitHostPlacement(finishedWork);
+          // Clear the "placement" from effect tag so that we know that this is
+          // inserted, before any life-cycles like componentDidMount gets called.
+          // TODO: findDOMNode doesn't rely on this any more but isMounted does
+          // and isMounted is deprecated anyway so we should be able to kill this.
+          finishedWork.flags &= ~Placement;
+        }
+        if (flags & Hydrating) {
+          finishedWork.flags &= ~Hydrating;
+        }
+      }
+    next: commitHostPlacement → commitPlacement(App fiber)
+  - id: step-7
+    title: Find the nearest ancestor that owns a DOM node
+    symbol: commitPlacement
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberCommitHostEffects.js
+    lines: 452-543
+    body: >-
+      App is not a DOM node, so React climbs return pointers to the nearest host parent. Here that is the
+      HostRoot, whose stateNode.containerInfo is the #root element. getHostSibling finds the DOM node to
+      insert before, if any; for our single child there is none, so the node will be appended.
+    code: |
+      function commitPlacement(finishedWork: Fiber): void {
+        // Recursively insert all host nodes into the parent.
+        let hostParentFiber;
+        let parentFiber = finishedWork.return;
+        while (parentFiber !== null) {
+          if (isHostParent(parentFiber)) {
+            hostParentFiber = parentFiber;
+            break;
+          }
+          parentFiber = parentFiber.return;
+        }
+        // ... fragment refs; non-mutation renderers; missing parent
+        switch (hostParentFiber.tag) {
+          // ... HostSingleton
+          case HostComponent: {
+            const parent: Instance = hostParentFiber.stateNode;
+            if (hostParentFiber.flags & ContentReset) {
+              // Reset the text content of the parent before doing any insertions
+              resetTextContent(parent);
+              // Clear ContentReset from the effect tag
+              hostParentFiber.flags &= ~ContentReset;
+            }
+
+            const before = getHostSibling(finishedWork);
+            // We only have the top Fiber that was inserted but we need to recurse down its
+            // children to find all the terminal nodes.
+            insertOrAppendPlacementNode(
+              finishedWork,
+              before,
+              parent,
+              parentFragmentInstances,
+            );
+            break;
+          }
+          case HostRoot:
+          case HostPortal: {
+            const parent: Container = hostParentFiber.stateNode.containerInfo;
+            const before = getHostSibling(finishedWork);
+            insertOrAppendPlacementNodeIntoContainer(
+              finishedWork,
+              before,
+              parent,
+              parentFragmentInstances,
+            );
+            break;
+          }
+          default:
+            throw new Error(
+              'Invalid host parent fiber. This error is likely caused by a bug ' +
+                'in React. Please file an issue.',
+            );
+        }
+      }
+    next: insertOrAppendPlacementNodeIntoContainer(App fiber, null, #root)
+  - id: step-8
+    title: Descend to the first real DOM nodes
+    symbol: insertOrAppendPlacementNodeIntoContainer
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberCommitHostEffects.js
+    lines: 330-392
+    body: >-
+      A host fiber is inserted and the descent stops there — its own children were already appended to it
+      during completeWork. Anything else, like App, is walked through: each child and its siblings are
+      tried in turn. App's only child is the h1 fiber, so its DOM node goes into the container. The whole
+      tree built off-screen enters the document in this one call.
+    code: |
+      function insertOrAppendPlacementNodeIntoContainer(
+        node: Fiber,
+        before: ?Instance,
+        parent: Container,
+        parentFragmentInstances: null | Array<FragmentInstanceType>,
+      ): void {
+        const {tag} = node;
+        const isHost = tag === HostComponent || tag === HostText;
+        if (isHost) {
+          const stateNode = node.stateNode;
+          if (before) {
+            insertInContainerBefore(parent, stateNode, before);
+          } else {
+            appendChildToContainer(parent, stateNode);
+          }
+          if (enableFragmentRefs) {
+            commitNewChildToFragmentInstances(node, parentFragmentInstances);
+          }
+          trackHostMutation();
+          return;
+        } else if (tag === HostPortal) {
+          // If the insertion itself is a portal, then we don't want to traverse
+          // down its children. Instead, we'll get insertions from each child in
+          // the portal directly.
+          return;
+        }
+        // ... singletons (<html>, <head>, <body>)
+        const child = node.child;
+        if (child !== null) {
+          insertOrAppendPlacementNodeIntoContainer(
+            child,
+            before,
+            parent,
+            parentFragmentInstances,
+          );
+          let sibling = child.sibling;
+          while (sibling !== null) {
+            insertOrAppendPlacementNodeIntoContainer(
+              sibling,
+              before,
+              parent,
+              parentFragmentInstances,
+            );
+            sibling = sibling.sibling;
+          }
+        }
+      }
+    next: appendChildToContainer(#root, <h1>)
+  - id: step-9
+    title: The one DOM call
+    symbol: appendChildToContainer
+    package: react-dom-bindings
+    file: packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js
+    lines: 1082-1133
+    body: >-
+      The host config is where the reconciler meets the DOM. The container can be a document, a comment
+      node or an element; for our div it is plain parentNode.appendChild (moveBefore, where the browser
+      supports it, only applies to a node that is already attached). The trailing block gives the container
+      an empty onclick handler unless it is a legacy ReactDOM.render root, so that clicks bubble on Mobile
+      Safari; the code comment has portal containers in mind.
+    code: |
+      export function appendChildToContainer(
+        container: Container,
+        child: Instance | TextInstance,
+      ): void {
+        if (__DEV__) {
+          warnForReactChildrenConflict(container);
+        }
+        let parentNode: DocumentFragment | Element;
+        if (container.nodeType === DOCUMENT_NODE) {
+          parentNode = (container as any).body;
+        } else if (
+          !disableCommentsAsDOMContainers &&
+          container.nodeType === COMMENT_NODE
+        ) {
+          // ... insert before the comment node instead
+          return;
+        } else if (container.nodeName === 'HTML') {
+          parentNode = container.ownerDocument.body as any;
+        } else {
+          parentNode = container as any;
+        }
+        if (supportsMoveBefore && child.parentNode !== null) {
+          // $FlowFixMe[prop-missing]: We've checked this with supportsMoveBefore.
+          parentNode.moveBefore(child, null);
+        } else {
+          parentNode.appendChild(child);
+        }
+        // ... Mobile Safari: give non-root containers an onclick so clicks bubble
+        const reactRootContainer = container._reactRootContainer;
+        if (
+          // $FlowFixMe[invalid-compare]
+          (reactRootContainer === null || reactRootContainer === undefined) &&
+          parentNode.onclick === null
+        ) {
+          // TODO: This cast may not be sound for SVG, MathML or custom elements.
+          trapClickOnNonInteractiveElement(parentNode as any as HTMLElement);
+        }
+      }
+    next: "back up to flushMutationEffects: root.current = finishedWork → flushLayoutEffects()"
+  - id: step-10
+    title: Layout effects run against the new DOM
+    symbol: flushLayoutEffects
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 4055-4152
+    body: >-
+      The DOM is updated but the browser has not painted yet, since this is all one task. Layout effects —
+      useLayoutEffect, componentDidMount and componentDidUpdate, ref attachment — run now, so they can
+      measure the new DOM and change it before the user sees anything. Passive effects come after, in
+      flushSpawnedWork or a Scheduler task (chapter 08).
+    code: |
+      function flushLayoutEffects(): void {
+        if (pendingEffectsStatus !== PENDING_LAYOUT_PHASE) {
+          return;
+        }
+        pendingEffectsStatus = NO_PENDING_EFFECTS;
+        // ... profiling
+        const root = pendingEffectsRoot;
+        const finishedWork = pendingFinishedWork;
+        const lanes = pendingEffectsLanes;
+        // ... clean up a default transition indicator
+        const subtreeHasLayoutEffects =
+          (finishedWork.subtreeFlags & LayoutMask) !== NoFlags;
+        const rootHasLayoutEffect = (finishedWork.flags & LayoutMask) !== NoFlags;
+
+        if (subtreeHasLayoutEffects || rootHasLayoutEffect) {
+          const prevTransition = ReactSharedInternals.T;
+          ReactSharedInternals.T = null;
+          const previousPriority = getCurrentUpdatePriority();
+          setCurrentUpdatePriority(DiscreteEventPriority);
+          const prevExecutionContext = executionContext;
+          executionContext |= CommitContext;
+          try {
+            // The next phase is the layout phase, where we call effects that read
+            // the host tree after it's been mutated. The idiomatic use case for this is
+            // layout, but class component lifecycles also fire here for legacy reasons.
+            if (enableSchedulingProfiler) {
+              markLayoutEffectsStarted(lanes);
+            }
+            commitLayoutEffects(finishedWork, root, lanes);
+            if (enableSchedulingProfiler) {
+              markLayoutEffectsStopped();
+            }
+          } finally {
+            // Reset the priority to the previous non-sync value.
+            executionContext = prevExecutionContext;
+            setCurrentUpdatePriority(previousPriority);
+            ReactSharedInternals.T = prevTransition;
+          }
+        }
+        // ... profiling
+        pendingEffectsStatus = PENDING_AFTER_MUTATION_PHASE;
+      }
+    next: flushSpawnedWork() → passive effects (chapter 08)
+tracked_symbols:
+  - { symbol: commitRoot, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-1 }
+  - { symbol: flushMutationEffects, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-2 }
+  - { symbol: commitMutationEffects, file: packages/react-reconciler/src/ReactFiberCommitWork.js, used_in: step-3 }
+  - { symbol: recursivelyTraverseMutationEffects, file: packages/react-reconciler/src/ReactFiberCommitWork.js, used_in: step-4 }
+  - { symbol: commitMutationEffectsOnFiber, file: packages/react-reconciler/src/ReactFiberCommitWork.js, used_in: step-5 }
+  - { symbol: commitReconciliationEffects, file: packages/react-reconciler/src/ReactFiberCommitWork.js, used_in: step-6 }
+  - { symbol: commitPlacement, file: packages/react-reconciler/src/ReactFiberCommitHostEffects.js, used_in: step-7 }
+  - { symbol: insertOrAppendPlacementNodeIntoContainer, file: packages/react-reconciler/src/ReactFiberCommitHostEffects.js, used_in: step-8 }
+  - { symbol: appendChildToContainer, file: packages/react-dom-bindings/src/client/ReactFiberConfigDOM.js, used_in: step-9 }
+  - { symbol: flushLayoutEffects, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-10 }

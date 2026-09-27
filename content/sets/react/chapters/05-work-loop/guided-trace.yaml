@@ -1,0 +1,584 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "// ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "The render phase: one fiber at a time, down and back up"
+level: practitioner
+minutes: 15
+pin: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+example:
+  label: The render we follow
+  request: "root.render(<App />), where App returns <h1>Hello</h1>"
+  target: "a finished work-in-progress tree with a detached <h1> DOM node"
+steps:
+  - id: step-1
+    title: The Scheduler calls back into React
+    symbol: performWorkOnRootViaSchedulerTask
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRootScheduler.js
+    lines: 513-606
+    body: >-
+      This is the callback chapter 03 handed to the Scheduler. It first flushes any passive effects left
+      over from a previous commit, since they might schedule more work, then recomputes the lanes to render
+      from root.pendingLanes. After the render it reschedules; if the same task should keep going, it
+      returns itself as a continuation instead of null.
+    code: |
+      function performWorkOnRootViaSchedulerTask(
+        root: FiberRoot,
+        didTimeout: boolean,
+      ): RenderTaskFn | null {
+        // ... profiling; bail out while a View Transition commit is pending
+        // Flush any pending passive effects before deciding which lanes to work on,
+        // in case they schedule additional work.
+        const originalCallbackNode = root.callbackNode;
+        const didFlushPassiveEffects = flushPendingEffectsDelayed();
+        // ... exit if flushing them cancelled this task
+        const workInProgressRoot = getWorkInProgressRoot();
+        const workInProgressRootRenderLanes = getWorkInProgressRootRenderLanes();
+        const rootHasPendingCommit =
+          root.cancelPendingCommit !== null || root.timeoutHandle !== noTimeout;
+        const lanes = getNextLanes(
+          root,
+          root === workInProgressRoot ? workInProgressRootRenderLanes : NoLanes,
+          rootHasPendingCommit,
+        );
+        if (lanes === NoLanes) {
+          // No more work on this root.
+          return null;
+        }
+        // ... comment on didTimeout
+        const forceSync = !disableSchedulerTimeoutInWorkLoop && didTimeout;
+        performWorkOnRoot(root, lanes, forceSync);
+        // ... comment: decide whether this task needs a continuation
+        scheduleTaskForRootDuringMicrotask(root, now());
+        if (root.callbackNode != null && root.callbackNode === originalCallbackNode) {
+          // The task node scheduled for this root is the same one that's
+          // currently executed. Need to return a continuation.
+          return performWorkOnRootViaSchedulerTask.bind(null, root);
+        }
+        return null;
+      }
+    next: performWorkOnRoot(root, DefaultLane, false)
+  - id: step-2
+    title: DefaultLane is not time-sliced
+    symbol: performWorkOnRoot
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 1137-1325
+    body: >-
+      The one decision that matters here is shouldTimeSlice. DefaultLane is in includesBlockingLane's set
+      (with SyncLane and InputContinuousLane), so even though this render runs inside a Scheduler task it
+      takes the synchronous loop and will not yield. Transitions, retries and idle work are what render
+      concurrently. Once a render completes, finishConcurrentRender moves on to the commit.
+    code: |
+      export function performWorkOnRoot(
+        root: FiberRoot,
+        lanes: Lanes,
+        forceSync: boolean,
+      ): void {
+        if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
+          throw new Error('Should not already be working.');
+        }
+        // ... performance-track logging of time spent yielded
+        // We disable time-slicing in some cases: if the work has been CPU-bound
+        // for too long ("expired" work, to prevent starvation), or we're in
+        // sync-updates-by-default mode.
+        const shouldTimeSlice =
+          (!forceSync &&
+            !includesBlockingLane(lanes) &&
+            !includesExpiredLane(root, lanes)) ||
+          // If we're prerendering, then we should use the concurrent work loop
+          // even if the lanes are synchronous, so that prerendering never blocks
+          // the main thread.
+          // TODO: We should consider doing this whenever a sync lane is suspended,
+          // even for regular pings.
+          checkIfRootIsPrerendering(root, lanes);
+
+        let exitStatus: RootExitStatus = shouldTimeSlice
+          ? renderRootConcurrent(root, lanes)
+          : renderRootSync(root, lanes, true);
+        // ... yielded, errored or suspended: retry or stop; otherwise:
+            finishConcurrentRender(
+              root,
+              exitStatus,
+              finishedWork,
+              lanes,
+              renderEndTime,
+            );
+          }
+          break;
+        } while (true);
+
+        ensureRootIsScheduled(root);
+      }
+    next: renderRootSync(root, lanes, true)
+  - id: step-3
+    title: Enter the render context and run the loop
+    symbol: renderRootSync
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 2623-2768
+    body: >-
+      executionContext gains RenderContext, which is how other code knows React is rendering, and the hooks
+      dispatcher is pushed. A new root or new lanes means starting over from a fresh stack. The loop is
+      wrapped in try/catch: a component that throws — or suspends by throwing a promise — lands in
+      handleThrow, and the loop continues by unwinding to the nearest boundary.
+    code: |
+      function renderRootSync(
+        root: FiberRoot,
+        lanes: Lanes,
+        shouldYieldForPrerendering: boolean,
+      ): RootExitStatus {
+        const prevExecutionContext = executionContext;
+        executionContext |= RenderContext;
+        const prevDispatcher = pushDispatcher(root.containerInfo);
+        const prevAsyncDispatcher = pushAsyncDispatcher();
+
+        // If the root or lanes have changed, throw out the existing stack
+        // and prepare a fresh one. Otherwise we'll continue where we left off.
+        if (workInProgressRoot !== root || workInProgressRootRenderLanes !== lanes) {
+          // ... DevTools updater tracking
+          workInProgressTransitions = getTransitionsForLanes(root, lanes);
+          prepareFreshStack(root, lanes);
+        }
+        // ...
+        let didSuspendInShell = false;
+        let exitStatus = workInProgressRootExitStatus;
+        outer: do {
+          try {
+            // ... if the last attempt suspended, unwind first
+            workLoopSync();
+            exitStatus = workInProgressRootExitStatus;
+            break;
+          } catch (thrownValue) {
+            handleThrow(root, thrownValue);
+          }
+        } while (true);
+        // ...
+        executionContext = prevExecutionContext;
+        popDispatcher(prevDispatcher);
+        popAsyncDispatcher(prevAsyncDispatcher);
+        // ...
+        if (workInProgress !== null) {
+          // Did not complete the tree. This can happen if something suspended in
+          // the shell.
+        } else {
+          // Normal case. We completed the whole tree.
+
+          // Set this to null to indicate there's no in-progress render.
+          workInProgressRoot = null;
+          workInProgressRootRenderLanes = NoLanes;
+
+          // It's safe to process the queue now that the render phase is complete.
+          finishQueueingConcurrentUpdates();
+        }
+
+        return exitStatus;
+      }
+    next: prepareFreshStack(root, lanes)
+  - id: step-4
+    title: The first unit of work is a copy of the root fiber
+    symbol: prepareFreshStack
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 2254-2284
+    body: >-
+      The work loop's state lives in module-level variables, and workInProgress is the cursor: the fiber to
+      work on next. It starts at a work-in-progress copy of root.current. Updates stashed while nothing was
+      rendering — the {element} update from root.render — are moved onto their fibers' queues here.
+    code: |
+      resetWorkInProgressStack();
+      workInProgressRoot = root;
+      const rootWorkInProgress = createWorkInProgress(root.current, null);
+      workInProgress = rootWorkInProgress;
+      workInProgressRootRenderLanes = lanes;
+      // ... reset the rest of the per-render state
+      entangledRenderLanes = getEntangledLanes(root, lanes);
+
+      finishQueueingConcurrentUpdates();
+    next: createWorkInProgress(root.current, null)
+  - id: step-5
+    title: Two trees, joined by alternate
+    symbol: createWorkInProgress
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiber.js
+    lines: 323-390
+    body: >-
+      React keeps at most two versions of each fiber: current, which is on screen, and the work-in-progress
+      being built. The first time, the copy is created and the pair link to each other through alternate;
+      on later renders the old copy is reused and reset. Children are not copied yet — child still points
+      into the current tree until the parent is reconciled.
+    code: |
+      export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
+        let workInProgress = current.alternate;
+        if (workInProgress === null) {
+          // We use a double buffering pooling technique because we know that we'll
+          // only ever need at most two versions of a tree. We pool the "other" unused
+          // node that we're free to reuse. This is lazily created to avoid allocating
+          // extra objects for things that are never updated. It also allow us to
+          // reclaim the extra memory if needed.
+          workInProgress = createFiber(
+            current.tag,
+            pendingProps,
+            current.key,
+            current.mode,
+          );
+          workInProgress.elementType = current.elementType;
+          workInProgress.type = current.type;
+          workInProgress.stateNode = current.stateNode;
+          // ... DEV-only fields
+          workInProgress.alternate = current;
+          current.alternate = workInProgress;
+        } else {
+          workInProgress.pendingProps = pendingProps;
+          // ... reset flags, subtreeFlags, deletions and profiler timings
+        }
+
+        // Reset all effects except static ones.
+        // Static effects are not specific to a render.
+        workInProgress.flags = current.flags & StaticMask;
+        workInProgress.childLanes = current.childLanes;
+        workInProgress.lanes = current.lanes;
+
+        workInProgress.child = current.child;
+        workInProgress.memoizedProps = current.memoizedProps;
+        workInProgress.memoizedState = current.memoizedState;
+        workInProgress.updateQueue = current.updateQueue;
+    next: workLoopSync()
+  - id: step-6
+    title: The whole loop is three lines
+    symbol: workLoopSync
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 2772-2777
+    body: >-
+      There is no recursion: the tree is walked with an explicit cursor, so the loop can stop between any two
+      fibers. The concurrent variant (chapter 10) is the same loop with one more condition — it also stops
+      when the Scheduler says the time slice is up.
+    code: |
+      function workLoopSync() {
+        // Perform work without checking if we need to yield between fiber.
+        while (workInProgress !== null) {
+          performUnitOfWork(workInProgress);
+        }
+      }
+    next: performUnitOfWork(workInProgress)
+  - id: step-7
+    title: Begin one fiber; go down if it has a child
+    symbol: performUnitOfWork
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 3081-3123
+    body: >-
+      beginWork returns the fiber's first child, or null. A child means “go down”: it becomes the next unit
+      of work. Null means this fiber is a leaf, so it is completed right away. Either way the props used are
+      now recorded as memoizedProps, which the next render compares against.
+    code: |
+      function performUnitOfWork(unitOfWork: Fiber): void {
+        // The current, flushed, state of this fiber is the alternate. Ideally
+        // nothing should rely on this, but relying on it here means that we don't
+        // need an additional field on the work in progress.
+        const current = unitOfWork.alternate;
+
+        let next;
+        if (enableProfilerTimer && (unitOfWork.mode & ProfileMode) !== NoMode) {
+          // ... the same call, wrapped in a profiler timer
+        } else {
+          if (__DEV__) {
+            // ... runWithFiberInDEV(unitOfWork, beginWork, …)
+          } else {
+            next = beginWork(current, unitOfWork, entangledRenderLanes);
+          }
+        }
+
+        unitOfWork.memoizedProps = unitOfWork.pendingProps;
+        if (next === null) {
+          // If this doesn't spawn new work, complete the current work.
+          completeUnitOfWork(unitOfWork);
+        } else {
+          workInProgress = next;
+        }
+      }
+    next: beginWork(current, unitOfWork, lanes)
+  - id: step-8
+    title: beginWork switches on the fiber's tag
+    symbol: beginWork
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberBeginWork.js
+    lines: 4226-4372
+    body: >-
+      First, can this fiber be skipped? If an existing fiber has the same props object and no scheduled
+      update or context change, it bails out early (chapter 07 shows how childLanes lets whole subtrees be
+      skipped). Otherwise the tag picks the handler. Our tree visits three of them in order: HostRoot,
+      then FunctionComponent for App, then HostComponent for the h1.
+    code: |
+      function beginWork(
+        current: Fiber | null,
+        workInProgress: Fiber,
+        renderLanes: Lanes,
+      ): Fiber | null {
+        // ... DEV: remount after hot reload
+        if (current !== null) {
+          const oldProps = current.memoizedProps;
+          const newProps = workInProgress.pendingProps;
+
+          if (
+            oldProps !== newProps ||
+            hasLegacyContextChanged() ||
+            // Force a re-render if the implementation changed due to hot reload:
+            (__DEV__ ? workInProgress.type !== current.type : false)
+          ) {
+            // If props or context changed, mark the fiber as having performed work.
+            // This may be unset if the props are determined to be equal later (memo).
+            didReceiveUpdate = true;
+          } else {
+            // ... same props: bail out early unless this fiber has scheduled work
+          }
+        } else {
+          didReceiveUpdate = false;
+          // ... tree ids during hydration
+        }
+
+        // Before entering the begin phase, clear pending update priority.
+        // ... TODO comment
+        workInProgress.lanes = NoLanes;
+
+        switch (workInProgress.tag) {
+          // ... LazyComponent
+          case FunctionComponent: {
+            const Component = workInProgress.type;
+            return updateFunctionComponent(
+              current,
+              workInProgress,
+              Component,
+              workInProgress.pendingProps,
+              renderLanes,
+            );
+          }
+          // ... ClassComponent
+          case HostRoot:
+            return updateHostRoot(current, workInProgress, renderLanes);
+          // ... HostHoistable and HostSingleton fall through
+          case HostComponent:
+            return updateHostComponent(current, workInProgress, renderLanes);
+    next: updateHostRoot(current, workInProgress, lanes)
+  - id: step-9
+    title: The root reads <App /> out of its update queue
+    symbol: updateHostRoot
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberBeginWork.js
+    lines: 1831-1949
+    body: >-
+      processUpdateQueue applies the {element} update from root.render, so the root's state now holds
+      <App />. That element is the root's only child. The HostRoot has a current fiber, so its children go
+      through the reconciler that tracks side effects: the new App fiber gets a Placement flag, the one
+      insertion the commit phase will perform.
+    code: |
+      function updateHostRoot(
+        current: null | Fiber,
+        workInProgress: Fiber,
+        renderLanes: Lanes,
+      ) {
+        pushHostRootContext(workInProgress);
+        // ...
+        const nextProps = workInProgress.pendingProps;
+        const prevState: RootState = workInProgress.memoizedState;
+        const prevChildren = prevState.element;
+        cloneUpdateQueue(current, workInProgress);
+        processUpdateQueue(workInProgress, nextProps, null, renderLanes);
+
+        const nextState: RootState = workInProgress.memoizedState;
+        // ... transitions and the root cache
+        // Caution: React DevTools currently depends on this property
+        // being called "element".
+        const nextChildren = nextState.element;
+        // $FlowFixMe[constant-condition]
+        if (supportsHydration && prevState.isDehydrated) {
+          // ... the hydrateRoot path
+        } else {
+          // Root is not dehydrated. Either this is a client-only root, or it
+          // already hydrated.
+          resetHydrationState();
+          if (nextChildren === prevChildren) {
+            return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
+          }
+          reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+        }
+        return workInProgress.child;
+      }
+    next: App's fiber → updateFunctionComponent
+  - id: step-10
+    title: Calling App is just a function call
+    symbol: updateFunctionComponent
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberBeginWork.js
+    lines: 1453-1562
+    body: >-
+      renderWithHooks sets up the hooks dispatcher for this fiber (chapter 07) and calls App(props). What it
+      returns — the <h1> element — is reconciled into child fibers. An existing component that received no
+      update bails out here, after running, without touching its children.
+    code: |
+      function updateFunctionComponent(
+        current: null | Fiber,
+        workInProgress: Fiber,
+        Component: any,
+        nextProps: any,
+        renderLanes: Lanes,
+      ) {
+        // ... DEV warnings; legacy context
+        let nextChildren;
+        let hasId;
+        prepareToReadContext(workInProgress, renderLanes);
+        // ... scheduling profiler
+        if (__DEV__) {
+          // ... the same call
+        } else {
+          nextChildren = renderWithHooks(
+            current,
+            workInProgress,
+            Component,
+            nextProps,
+            context,
+            renderLanes,
+          );
+          hasId = checkDidRenderIdHook();
+        }
+        // ...
+        if (current !== null && !didReceiveUpdate) {
+          bailoutHooks(current, workInProgress, renderLanes);
+          return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
+        }
+        // ... tree ids during hydration
+        // React DevTools reads this flag.
+        workInProgress.flags |= PerformedWork;
+        reconcileChildren(current, workInProgress, nextChildren, renderLanes);
+        return workInProgress.child;
+      }
+    next: h1's fiber → updateHostComponent → null (text is not a fiber) → completeUnitOfWork
+  - id: step-11
+    title: Complete, then sibling, else climb
+    symbol: completeUnitOfWork
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 3368-3431
+    body: >-
+      The h1's only child is the string "Hello", which updateHostComponent leaves to the DOM as text
+      content, so beginWork returned null and the h1 completes. Completion then moves sideways to a sibling
+      if there is one — its beginWork runs next — or back up through return, completing each parent in turn.
+      Reaching past the root means the whole tree is done.
+    code: |
+      function completeUnitOfWork(unitOfWork: Fiber): void {
+        // Attempt to complete the current unit of work, then move to the next
+        // sibling. If there are no more siblings, return to the parent fiber.
+        let completedWork: Fiber = unitOfWork;
+        do {
+          // ... an Incomplete fiber (something threw below it) unwinds instead
+          const current = completedWork.alternate;
+          const returnFiber = completedWork.return;
+
+          let next;
+          startProfilerTimer(completedWork);
+          if (__DEV__) {
+            // ... runWithFiberInDEV(completedWork, completeWork, …)
+          } else {
+            next = completeWork(current, completedWork, entangledRenderLanes);
+          }
+          // ... profiler duration
+          if (next !== null) {
+            // Completing this fiber spawned new work. Work on that next.
+            workInProgress = next;
+            return;
+          }
+
+          const siblingFiber = completedWork.sibling;
+          if (siblingFiber !== null) {
+            // If there is more work to do in this returnFiber, do that next.
+            workInProgress = siblingFiber;
+            return;
+          }
+          // Otherwise, return to the parent
+          // $FlowFixMe[incompatible-type] we bail out when we get a null
+          completedWork = returnFiber;
+          // Update the next thing we're working on in case something throws.
+          workInProgress = completedWork;
+        } while (completedWork !== null);
+
+        // We've reached the root.
+        if (workInProgressRootExitStatus === RootInProgress) {
+          workInProgressRootExitStatus = RootCompleted;
+        }
+      }
+    next: completeWork(current, h1Fiber, lanes)
+  - id: step-12
+    title: The DOM node is built off-screen
+    symbol: completeWork (HostComponent)
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberCompleteWork.js
+    lines: 1374-1453
+    body: >-
+      On mount, completeWork creates the real element — createInstance calls
+      ownerDocument.createElement("h1") — and appendAllChildren attaches the DOM nodes of child fibers, which are already complete because
+      completion runs bottom-up. finalizeInitialChildren sets the props, including "Hello" as textContent.
+      None of this is in the document yet: the finished tree waits for the commit phase to insert it.
+    code: |
+      case HostComponent: {
+        popHostContext(workInProgress);
+        const type = workInProgress.type;
+        if (current !== null && workInProgress.stateNode != null) {
+          updateHostComponent(
+            current,
+            workInProgress,
+            type,
+            newProps,
+            renderLanes,
+          );
+        } else {
+          // ... no props after an aborted render
+          const currentHostContext = getHostContext();
+          // ... TODO comment
+          const wasHydrated = popHydrationState(workInProgress);
+          if (wasHydrated) {
+            // ... adopt the server-rendered node
+          } else {
+            const rootContainerInstance = getRootHostContainer();
+            const instance = createInstance(
+              type,
+              newProps,
+              rootContainerInstance,
+              currentHostContext,
+              workInProgress,
+            );
+            // TODO: For persistent renderers, we should pass children as part
+            // of the initial instance creation
+            markCloned(workInProgress);
+            appendAllChildren(instance, workInProgress, false, false);
+            workInProgress.stateNode = instance;
+
+            // Certain renderers require commit-time effects for initial mount.
+            // (eg DOM renderer supports auto-focus for certain elements).
+            // Make sure such renderers get scheduled for later work.
+            if (
+              finalizeInitialChildren(
+                instance,
+                type,
+                newProps,
+                currentHostContext,
+              )
+            ) {
+              markUpdate(workInProgress);
+            }
+          }
+        }
+    next: finishConcurrentRender → completeRoot → commitRoot
+tracked_symbols:
+  - { symbol: performWorkOnRootViaSchedulerTask, file: packages/react-reconciler/src/ReactFiberRootScheduler.js, used_in: step-1 }
+  - { symbol: performWorkOnRoot, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-2 }
+  - { symbol: renderRootSync, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-3 }
+  - { symbol: prepareFreshStack, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-4 }
+  - { symbol: createWorkInProgress, file: packages/react-reconciler/src/ReactFiber.js, used_in: step-5 }
+  - { symbol: workLoopSync, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-6 }
+  - { symbol: performUnitOfWork, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-7 }
+  - { symbol: beginWork, file: packages/react-reconciler/src/ReactFiberBeginWork.js, used_in: step-8 }
+  - { symbol: updateHostRoot, file: packages/react-reconciler/src/ReactFiberBeginWork.js, used_in: step-9 }
+  - { symbol: updateFunctionComponent, file: packages/react-reconciler/src/ReactFiberBeginWork.js, used_in: step-10 }
+  - { symbol: completeUnitOfWork, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-11 }
+  - { symbol: completeWork, file: packages/react-reconciler/src/ReactFiberCompleteWork.js, used_in: step-12 }

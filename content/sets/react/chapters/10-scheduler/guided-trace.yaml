@@ -1,0 +1,433 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "// ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "The Scheduler: a min-heap, a MessageChannel and a 5 ms budget"
+level: practitioner
+minutes: 13
+pin: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+example:
+  label: The task we follow
+  request: "startTransition(() => setTab('posts')) — a render on a transition lane"
+  target: "the render runs in 5 ms slices, yielding to the browser in between"
+steps:
+  - id: step-1
+    title: React translates lanes into Scheduler priorities
+    symbol: scheduleTaskForRootDuringMicrotask
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRootScheduler.js
+    lines: 480-507
+    body: >-
+      The Scheduler is a separate package that knows nothing about lanes or fibers. It has five priority
+      levels; the reconciler maps its event priorities onto them. A transition lane is below
+      DefaultEventPriority but not idle, so lanesToEventPriority returns DefaultEventPriority and the task is
+      NormalPriority. The callback is a bound performWorkOnRootViaSchedulerTask.
+    code: |
+      let schedulerPriorityLevel;
+      switch (lanesToEventPriority(nextLanes)) {
+        // Scheduler does have an "ImmediatePriority", but now that we use
+        // microtasks for sync work we no longer use that. Any sync work that
+        // reaches this path is meant to be time sliced.
+        case DiscreteEventPriority:
+        case ContinuousEventPriority:
+          schedulerPriorityLevel = UserBlockingSchedulerPriority;
+          break;
+        case DefaultEventPriority:
+          schedulerPriorityLevel = NormalSchedulerPriority;
+          break;
+        case IdleEventPriority:
+          schedulerPriorityLevel = IdleSchedulerPriority;
+          break;
+        default:
+          schedulerPriorityLevel = NormalSchedulerPriority;
+          break;
+      }
+
+      const newCallbackNode = scheduleCallback(
+        schedulerPriorityLevel,
+        performWorkOnRootViaSchedulerTask.bind(null, root),
+      );
+
+      root.callbackPriority = newCallbackPriority;
+      root.callbackNode = newCallbackNode;
+      return newCallbackPriority;
+    next: Scheduler.unstable_scheduleCallback(NormalPriority, callback)
+  - id: step-2
+    title: Priority becomes a deadline
+    symbol: unstable_scheduleCallback
+    package: scheduler
+    file: packages/scheduler/src/forks/Scheduler.js
+    lines: 335-427
+    body: >-
+      Priority is turned into a timeout — NormalPriority's is normalPriorityTimeout, 5000 ms in
+      SchedulerFeatureFlags.js — and the task is sorted by startTime + timeout. So priority is really an
+      expiration time: a low-priority task that has waited long enough runs ahead of newer urgent ones.
+      Delayed tasks wait in a separate timerQueue. The returned task object is what React keeps as
+      root.callbackNode.
+    code: |
+      function unstable_scheduleCallback(
+        priorityLevel: PriorityLevel,
+        callback: Callback,
+        options?: {delay: number},
+      ): Task {
+        var currentTime = getCurrentTime();
+
+        var startTime;
+        // ... startTime = currentTime + options.delay, if there is one
+        var timeout;
+        switch (priorityLevel) {
+          case ImmediatePriority:
+            // Times out immediately
+            timeout = -1;
+            break;
+          case UserBlockingPriority:
+            // Eventually times out
+            timeout = userBlockingPriorityTimeout;
+            break;
+          case IdlePriority:
+            // Never times out
+            timeout = maxSigned31BitInt;
+            break;
+          case LowPriority:
+            // Eventually times out
+            timeout = lowPriorityTimeout;
+            break;
+          case NormalPriority:
+          default:
+            // Eventually times out
+            timeout = normalPriorityTimeout;
+            break;
+        }
+
+        var expirationTime = startTime + timeout;
+
+        var newTask: Task = {
+          id: taskIdCounter++,
+          callback,
+          priorityLevel,
+          startTime,
+          expirationTime,
+          sortIndex: -1,
+        };
+        // ... profiling
+        if (startTime > currentTime) {
+          // This is a delayed task.
+          // ... push onto timerQueue and set a timeout for the earliest one
+        } else {
+          newTask.sortIndex = expirationTime;
+          push(taskQueue, newTask);
+          // ... profiling
+          // Schedule a host callback, if needed. If we're already performing work,
+          // wait until the next time we yield.
+          if (!isHostCallbackScheduled && !isPerformingWork) {
+            isHostCallbackScheduled = true;
+            requestHostCallback();
+          }
+        }
+
+        return newTask;
+      }
+    next: push(taskQueue, newTask)
+  - id: step-3
+    title: The queue is a binary heap in an array
+    symbol: push
+    package: scheduler
+    file: packages/scheduler/src/SchedulerMinHeap.js
+    lines: 17-95
+    body: >-
+      peek is O(1) and push and pop are O(log n). Ties on sortIndex go to the lower id, so tasks with the
+      same expiration run in the order they were scheduled. There is no way to remove a task from the
+      middle: unstable_cancelCallback only sets task.callback to null, and the work loop drops such tasks
+      when they reach the top.
+    code: |
+      export function push<T: Node>(heap: Heap<T>, node: T): void {
+        const index = heap.length;
+        heap.push(node);
+        siftUp(heap, node, index);
+      }
+
+      export function peek<T: Node>(heap: Heap<T>): T | null {
+        return heap.length === 0 ? null : heap[0];
+      }
+      // ... pop, siftUp, siftDown
+      function compare(a: Node, b: Node) {
+        // Compare sort index first, then task id.
+        const diff = a.sortIndex - b.sortIndex;
+        return diff !== 0 ? diff : a.id - b.id;
+      }
+    next: requestHostCallback()
+  - id: step-4
+    title: A message to itself, not setTimeout
+    symbol: requestHostCallback
+    package: scheduler
+    file: packages/scheduler/src/forks/Scheduler.js
+    lines: 530-568
+    body: >-
+      To get a new browser task soon, the Scheduler posts a message on a MessageChannel it owns, because
+      nested setTimeout calls are clamped to at least 4 ms. Node.js and old IE get setImmediate instead.
+      Either way, performWorkUntilDeadline runs as its own macrotask, after the current script and its
+      microtasks.
+    code: |
+      let schedulePerformWorkUntilDeadline;
+      if (typeof localSetImmediate === 'function') {
+        // ... Node.js and old IE: setImmediate
+        schedulePerformWorkUntilDeadline = () => {
+          localSetImmediate(performWorkUntilDeadline);
+        };
+      } else if (typeof MessageChannel !== 'undefined') {
+        // DOM and Worker environments.
+        // We prefer MessageChannel because of the 4ms setTimeout clamping.
+        const channel = new MessageChannel();
+        const port = channel.port2;
+        channel.port1.onmessage = performWorkUntilDeadline;
+        schedulePerformWorkUntilDeadline = () => {
+          port.postMessage(null);
+        };
+      } else {
+        // We should only fallback here in non-browser environments.
+        schedulePerformWorkUntilDeadline = () => {
+          // $FlowFixMe[not-a-function] nullable value
+          localSetTimeout(performWorkUntilDeadline, 0);
+        };
+      }
+
+      function requestHostCallback() {
+        if (!isMessageLoopRunning) {
+          isMessageLoopRunning = true;
+          schedulePerformWorkUntilDeadline();
+        }
+      }
+    next: "message event → performWorkUntilDeadline()"
+  - id: step-5
+    title: Each browser task starts the clock
+    symbol: performWorkUntilDeadline
+    package: scheduler
+    file: packages/scheduler/src/forks/Scheduler.js
+    lines: 498-528
+    body: >-
+      startTime is the moment this browser task began; shouldYieldToHost measures against it. If flushWork
+      reports more work, another message is posted, so the next slice is a new browser task and the browser
+      can handle input and paint in between.
+    code: |
+      const performWorkUntilDeadline = () => {
+        // $FlowFixMe[constant-condition]
+        if (enableRequestPaint) {
+          needsPaint = false;
+        }
+        if (isMessageLoopRunning) {
+          const currentTime = getCurrentTime();
+          // Keep track of the start time so we can measure how long the main thread
+          // has been blocked.
+          startTime = currentTime;
+
+          // If a scheduler task throws, exit the current browser task so the
+          // error can be observed.
+          //
+          // Intentionally not using a try-catch, since that makes some debugging
+          // techniques harder. Instead, if `flushWork` errors, then `hasMoreWork` will
+          // remain true, and we'll continue the work loop.
+          let hasMoreWork = true;
+          try {
+            hasMoreWork = flushWork(currentTime);
+          } finally {
+            if (hasMoreWork) {
+              // If there's more work, schedule the next message event at the end
+              // of the preceding one.
+              schedulePerformWorkUntilDeadline();
+            } else {
+              isMessageLoopRunning = false;
+            }
+          }
+        }
+      };
+    next: flushWork(currentTime)
+  - id: step-6
+    title: flushWork guards the loop
+    symbol: flushWork
+    package: scheduler
+    file: packages/scheduler/src/forks/Scheduler.js
+    lines: 145-191
+    body: >-
+      While tasks run, isPerformingWork is true, so a task scheduled from inside a callback (step 2) only
+      joins the heap and does not post another message. The current priority level is restored afterwards,
+      even if a callback throws.
+    code: |
+      function flushWork(initialTime: number) {
+        // ... profiling
+        // We'll need a host callback the next time work is scheduled.
+        isHostCallbackScheduled = false;
+        if (isHostTimeoutScheduled) {
+          // We scheduled a timeout but it's no longer needed. Cancel it.
+          isHostTimeoutScheduled = false;
+          cancelHostTimeout();
+        }
+
+        isPerformingWork = true;
+        const previousPriorityLevel = currentPriorityLevel;
+        try {
+          // $FlowFixMe[constant-condition]
+          if (enableProfiling) {
+            // ... the same call, with error profiling
+          } else {
+            // No catch in prod code path.
+            return workLoop(initialTime);
+          }
+        } finally {
+          currentTask = null;
+          currentPriorityLevel = previousPriorityLevel;
+          isPerformingWork = false;
+          // ... profiling
+        }
+      }
+    next: workLoop(initialTime)
+  - id: step-7
+    title: Run tasks until the slice is spent
+    symbol: workLoop
+    package: scheduler
+    file: packages/scheduler/src/forks/Scheduler.js
+    lines: 193-266
+    body: >-
+      Tasks run in heap order. Before each one, the loop stops if the slice is spent — unless the task has
+      already expired, in which case it runs anyway. A callback that returns a function is not finished:
+      that function replaces task.callback, the task stays at the top of the heap, and the loop yields at
+      once. (enableAlwaysYieldScheduler is __EXPERIMENTAL__, so false in the stable build.)
+    code: |
+      function workLoop(initialTime: number) {
+        let currentTime = initialTime;
+        advanceTimers(currentTime);
+        currentTask = peek(taskQueue);
+        while (currentTask !== null) {
+          if (!enableAlwaysYieldScheduler) {
+            if (currentTask.expirationTime > currentTime && shouldYieldToHost()) {
+              // This currentTask hasn't expired, and we've reached the deadline.
+              break;
+            }
+          }
+          // $FlowFixMe[incompatible-use] found when upgrading Flow
+          const callback = currentTask.callback;
+          if (typeof callback === 'function') {
+            // $FlowFixMe[incompatible-use] found when upgrading Flow
+            currentTask.callback = null;
+            // $FlowFixMe[incompatible-use] found when upgrading Flow
+            currentPriorityLevel = currentTask.priorityLevel;
+            // $FlowFixMe[incompatible-use] found when upgrading Flow
+            const didUserCallbackTimeout = currentTask.expirationTime <= currentTime;
+            // ... profiling
+            const continuationCallback = callback(didUserCallbackTimeout);
+            currentTime = getCurrentTime();
+            if (typeof continuationCallback === 'function') {
+              // If a continuation is returned, immediately yield to the main thread
+              // regardless of how much time is left in the current time slice.
+              // $FlowFixMe[incompatible-use] found when upgrading Flow
+              currentTask.callback = continuationCallback;
+              // ... profiling
+              advanceTimers(currentTime);
+              return true;
+            } else {
+              // ... profiling
+              if (currentTask === peek(taskQueue)) {
+                pop(taskQueue);
+              }
+              advanceTimers(currentTime);
+            }
+          } else {
+            pop(taskQueue);
+          }
+          currentTask = peek(taskQueue);
+          // ... experimental: always yield between tasks
+        }
+        // Return whether there's additional work
+        if (currentTask !== null) {
+          return true;
+        } else {
+          const firstTimer = peek(timerQueue);
+          if (firstTimer !== null) {
+            requestHostTimeout(handleTimeout, firstTimer.startTime - currentTime);
+          }
+          return false;
+        }
+      }
+    next: "callback(didTimeout) → performWorkOnRootViaSchedulerTask(root) → renderRootConcurrent"
+  - id: step-8
+    title: React's concurrent loop asks before every fiber
+    symbol: workLoopConcurrentByScheduler
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberWorkLoop.js
+    lines: 3073-3079
+    body: >-
+      A transition lane is not a blocking lane, so performWorkOnRoot picks renderRootConcurrent. With
+      enableThrottledScheduling off in the stable build, it runs this loop: the synchronous loop from
+      chapter 05 plus one question before each unit of work. shouldYield is the Scheduler's
+      unstable_shouldYield, re-exported by the reconciler.
+    code: |
+      function workLoopConcurrentByScheduler() {
+        // Perform work until Scheduler asks us to yield
+        while (workInProgress !== null && !shouldYield()) {
+          // $FlowFixMe[incompatible-type] flow doesn't know that shouldYield() is side-effect free
+          performUnitOfWork(workInProgress);
+        }
+      }
+    next: shouldYield() → shouldYieldToHost()
+  - id: step-9
+    title: Five milliseconds, or a pending paint
+    symbol: shouldYieldToHost
+    package: scheduler
+    file: packages/scheduler/src/forks/Scheduler.js
+    lines: 459-472
+    body: >-
+      frameInterval defaults to frameYieldMs, 5 ms. Once the current browser task has run that long — or
+      React has asked for a paint with requestPaint — the answer is yes. The work loop leaves workInProgress
+      pointing at the next fiber, so the render can resume exactly there.
+    code: |
+      function shouldYieldToHost(): boolean {
+        if (!enableAlwaysYieldScheduler && enableRequestPaint && needsPaint) {
+          // Yield now.
+          return true;
+        }
+        const timeElapsed = getCurrentTime() - startTime;
+        if (timeElapsed < frameInterval) {
+          // The main thread has only been blocked for a really short amount of time;
+          // smaller than a single frame. Don't yield yet.
+          return false;
+        }
+        // Yield now.
+        return true;
+      }
+    next: renderRootConcurrent returns RootInProgress → back in performWorkOnRootViaSchedulerTask
+  - id: step-10
+    title: React hands back a continuation
+    symbol: performWorkOnRootViaSchedulerTask
+    package: react-reconciler
+    file: packages/react-reconciler/src/ReactFiberRootScheduler.js
+    lines: 592-605
+    body: >-
+      The render is unfinished and nothing more urgent arrived, so the root's task is still the same task
+      object. Returning the bound function tells workLoop (step 7) to keep the task and yield. The next
+      message event calls it again and the render resumes from workInProgress. Had a more urgent update
+      come in, the task would have been cancelled and replaced, and the transition render restarted later.
+    code: |
+      // The work loop yielded, but there may or may not be work left at the current
+      // priority. Need to determine whether we need to schedule a continuation.
+      // Usually `scheduleTaskForRootDuringMicrotask` only runs inside a microtask;
+      // however, since most of the logic for determining if we need a continuation
+      // versus a new task is the same, we cheat a bit and call it here. This is
+      // only safe to do because we know we're at the end of the browser task.
+      // So although it's not an actual microtask, it might as well be.
+      scheduleTaskForRootDuringMicrotask(root, now());
+      if (root.callbackNode != null && root.callbackNode === originalCallbackNode) {
+        // The task node scheduled for this root is the same one that's
+        // currently executed. Need to return a continuation.
+        return performWorkOnRootViaSchedulerTask.bind(null, root);
+      }
+      return null;
+    next: "workLoop stores the continuation → performWorkUntilDeadline posts the next message"
+tracked_symbols:
+  - { symbol: scheduleTaskForRootDuringMicrotask, file: packages/react-reconciler/src/ReactFiberRootScheduler.js, used_in: step-1 }
+  - { symbol: unstable_scheduleCallback, file: packages/scheduler/src/forks/Scheduler.js, used_in: step-2 }
+  - { symbol: push, file: packages/scheduler/src/SchedulerMinHeap.js, used_in: step-3 }
+  - { symbol: requestHostCallback, file: packages/scheduler/src/forks/Scheduler.js, used_in: step-4 }
+  - { symbol: performWorkUntilDeadline, file: packages/scheduler/src/forks/Scheduler.js, used_in: step-5 }
+  - { symbol: flushWork, file: packages/scheduler/src/forks/Scheduler.js, used_in: step-6 }
+  - { symbol: workLoop, file: packages/scheduler/src/forks/Scheduler.js, used_in: step-7 }
+  - { symbol: workLoopConcurrentByScheduler, file: packages/react-reconciler/src/ReactFiberWorkLoop.js, used_in: step-8 }
+  - { symbol: shouldYieldToHost, file: packages/scheduler/src/forks/Scheduler.js, used_in: step-9 }
+  - { symbol: performWorkOnRootViaSchedulerTask, file: packages/react-reconciler/src/ReactFiberRootScheduler.js, used_in: step-10 }

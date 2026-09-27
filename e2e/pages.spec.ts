@@ -78,9 +78,33 @@ test("set home shows the pin and links chapter 04 to its Guided Trace", async ({
   await expect(page).toHaveURL(new RegExp(`${TRACE}$`));
 });
 
+test("library home links to the React set", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("link", { name: /facebook\/react/ }).click();
+  await expect(page).toHaveURL(/\/react\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("React, in depth");
+  await expect(page.locator("h1 .accent")).toHaveCSS("color", "rgb(108, 200, 214)");
+});
+
+test("React set home shows its pin and links chapter 07 to its Guided Trace", async ({ page }) => {
+  await page.goto("/react/");
+  const truth = page.getByRole("complementary", { name: "Source of truth" });
+  await expect(truth).toContainText("1d34f91");
+  await expect(truth).toContainText("v19.3.0");
+  await expect(truth).toContainText("2026-09-27");
+  await expect(truth).toContainText("Tracked symbols71");
+  await page.getByRole("link", { name: /What setState does/ }).click();
+  await expect(page).toHaveURL(/\/react\/07-use-state\/guided-trace\/$/);
+  await expect(page.getByRole("link", { name: "View on GitHub at pin" })).toHaveAttribute(
+    "href",
+    "https://github.com/facebook/react/blob/1d34f91dfde6bba84d08b683aaba164c7194dacb/packages/react/src/ReactHooks.js#L66-L71",
+  );
+  await expect(page.getByRole("list", { name: "About this article" })).toContainText("facebook/react @ 1d34f91");
+});
+
 test.describe("phone width", () => {
   test.use({ viewport: { width: 390, height: 844 } });
-  for (const path of ["/", "/rails/", `${TRACE}#step-8`]) {
+  for (const path of ["/", "/rails/", "/react/", `${TRACE}#step-8`]) {
     test(`${path} has no horizontal page scroll`, async ({ page }) => {
       await page.goto(path);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -90,17 +114,24 @@ test.describe("phone width", () => {
 });
 
 const TRACES = [
-  { chapter: "02-booting", label: "The boot we follow", steps: 9, package: "railties", title: "config/environment.rb starts the boot" },
-  { chapter: "05-routing", label: "The route we follow", steps: 9, package: "actionpack", title: "draw evaluates routes.rb on a Mapper" },
-  { chapter: "07-rendering", label: "The render we follow", steps: 10, package: "actionpack", title: "After the action, check whether anything was rendered" },
-  { chapter: "10-associations", label: "The call we follow", steps: 10, package: "activerecord", title: "has_many is a class method that builds a reflection" },
-  { chapter: "11-transactions", label: "The call we follow", steps: 10, package: "activerecord", title: "save is wrapped before it saves" },
-  { chapter: "12-active-job", label: "The job we follow", steps: 11, package: "activejob", title: "perform_later builds a job and enqueues it" },
+  { set: "rails", chapter: "02-booting", label: "The boot we follow", steps: 9, package: "railties", title: "config/environment.rb starts the boot" },
+  { set: "rails", chapter: "05-routing", label: "The route we follow", steps: 9, package: "actionpack", title: "draw evaluates routes.rb on a Mapper" },
+  { set: "rails", chapter: "07-rendering", label: "The render we follow", steps: 10, package: "actionpack", title: "After the action, check whether anything was rendered" },
+  { set: "rails", chapter: "10-associations", label: "The call we follow", steps: 10, package: "activerecord", title: "has_many is a class method that builds a reflection" },
+  { set: "rails", chapter: "11-transactions", label: "The call we follow", steps: 10, package: "activerecord", title: "save is wrapped before it saves" },
+  { set: "rails", chapter: "12-active-job", label: "The job we follow", steps: 11, package: "activejob", title: "perform_later builds a job and enqueues it" },
+  { set: "react", chapter: "03-first-render", label: "The call we follow", steps: 11, package: "react-dom", title: "createRoot checks the container and builds a FiberRoot" },
+  { set: "react", chapter: "05-work-loop", label: "The render we follow", steps: 12, package: "react-reconciler", title: "The Scheduler calls back into React" },
+  { set: "react", chapter: "06-reconciling-children", label: "The re-render we follow", steps: 11, package: "react-reconciler", title: "Two reconcilers, one algorithm" },
+  { set: "react", chapter: "07-use-state", label: "The state we follow", steps: 12, package: "react", title: "useState is a forwarder" },
+  { set: "react", chapter: "08-use-effect", label: "The effect we follow", steps: 10, package: "react", title: "useEffect forwards to the dispatcher" },
+  { set: "react", chapter: "10-scheduler", label: "The task we follow", steps: 10, package: "react-reconciler", title: "React translates lanes into Scheduler priorities" },
+  { set: "react", chapter: "11-commit", label: "The commit we follow", steps: 10, package: "react-reconciler", title: "The commit runs its phases back to back" },
 ];
 
 for (const trace of TRACES) {
-  test(`${trace.chapter} Guided Trace renders step 1 under its own label`, async ({ page }) => {
-    await page.goto(`/rails/${trace.chapter}/guided-trace/`);
+  test(`${trace.set}/${trace.chapter} Guided Trace renders step 1 under its own label`, async ({ page }) => {
+    await page.goto(`/${trace.set}/${trace.chapter}/guided-trace/`);
     await expect(page.getByRole("complementary", { name: trace.label })).toBeVisible();
     await expect(page.locator(".gt-counter")).toHaveText(`Step 1 of ${trace.steps} · ${trace.package}`);
     await expect(page.getByRole("heading", { level: 2, name: trace.title })).toBeVisible();
@@ -108,8 +139,8 @@ for (const trace of TRACES) {
 
   test.describe("phone width", () => {
     test.use({ viewport: { width: 390, height: 844 } });
-    test(`no step of ${trace.chapter} scrolls the page sideways`, async ({ page }) => {
-      await page.goto(`/rails/${trace.chapter}/guided-trace/`);
+    test(`no step of ${trace.set}/${trace.chapter} scrolls the page sideways`, async ({ page }) => {
+      await page.goto(`/${trace.set}/${trace.chapter}/guided-trace/`);
       for (let i = 1; i <= trace.steps; i++) {
         await expect(page.locator(".gt-counter")).toHaveText(new RegExp(`^Step ${i} of`));
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
