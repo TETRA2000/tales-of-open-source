@@ -17,4 +17,22 @@ describe.skipIf(!existsSync(localCloneDir("rails/rails")))("real content", () =>
     // An unquoted " #" in YAML starts a comment and silently truncates the value.
     expect(body.data.steps[1].title).toBe("The application object answers #call");
   });
+
+  it("every Rails chapter that lists GT has a Guided Trace", () => {
+    const { sets } = loadLibrary({ contentDir: join(import.meta.dirname, "../content") });
+    const rails = sets.find((s) => s.id === "rails");
+    const listed = rails?.chapters.filter((c) => c.plannedFormats.includes("GT")) ?? [];
+    expect(listed.map((c) => c.id)).toEqual([
+      "02-booting",
+      "04-request-lifecycle",
+      "05-routing",
+      "07-rendering",
+      "10-associations",
+      "11-transactions",
+      "12-active-job",
+    ]);
+    for (const chapter of listed) {
+      expect(chapter.articles.map((a) => a.format.code), chapter.id).toContain("GT");
+    }
+  });
 });
