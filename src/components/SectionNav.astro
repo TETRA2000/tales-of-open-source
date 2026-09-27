@@ -1,0 +1,42 @@
+---
+// In-page section links on the right of the top bar.
+interface Props {
+  label: string;
+  links: { label: string; href: string }[];
+}
+
+const { label, links } = Astro.props;
+---
+
+<nav aria-label={label}>
+  <ul>
+    {
+      links.map((link) => (
+        <li>
+          <a href={link.href}>{link.label}</a>
+        </li>
+      ))
+    }
+  </ul>
+</nav>
+
+<style>
+  ul {
+    display: flex;
+    gap: 28px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--color-textMuted);
+    text-decoration: none;
+    letter-spacing: 0.04em;
+  }
+  a:hover {
+    color: var(--color-text);
+  }
+</style>

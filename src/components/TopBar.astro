@@ -1,0 +1,113 @@
+---
+// Shared top bar. On the library home it shows the logo; elsewhere a breadcrumb
+// (Library / Set / Part · Chapter). The right-hand side is a slot: section links
+// or the chapter's format switcher.
+export interface Crumb {
+  label: string;
+  href?: string;
+}
+
+interface Props {
+  crumbs?: Crumb[];
+}
+
+const { crumbs } = Astro.props;
+---
+
+<header class="topbar">
+  <div class="topbar-inner page">
+    {
+      crumbs ? (
+        <nav aria-label="Breadcrumb">
+          <ol class="crumbs">
+            <li>
+              <a class="brand" href="/">Tales of Open Source</a>
+            </li>
+            {crumbs.map((crumb, i) => (
+              <li>
+                <span class="sep" aria-hidden="true">/</span>
+                {crumb.href && i < crumbs.length - 1 ? (
+                  <a class="crumb-link" href={crumb.href}>{crumb.label}</a>
+                ) : (
+                  <span aria-current={i === crumbs.length - 1 ? "page" : undefined}>{crumb.label}</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </nav>
+      ) : (
+        <a class="logo" href="/" aria-current="page">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 5h6a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4z" />
+            <path d="M20 5h-6a2 2 0 0 0-2 2v12a2 2 0 0 1 2-2h6z" />
+          </svg>
+          <span class="brand">Tales of Open Source</span>
+        </a>
+      )
+    }
+    <slot />
+  </div>
+</header>
+
+<style>
+  .topbar {
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-rule);
+    font-family: var(--font-body);
+    font-size: 13px;
+  }
+  .topbar-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+    padding: 6px var(--gutter);
+    min-height: 58px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    color: var(--color-text);
+    text-decoration: none;
+  }
+  .logo:hover {
+    color: var(--color-text);
+  }
+  .brand {
+    color: var(--color-text);
+    text-decoration: none;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--color-textMuted);
+  }
+  .crumbs li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+  }
+  .crumbs a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .crumb-link {
+    color: var(--color-textMuted);
+  }
+  .crumb-link:hover {
+    color: var(--color-text);
+  }
+</style>

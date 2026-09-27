@@ -1,0 +1,48 @@
+---
+// The other formats of this chapter, as found in its content folder.
+import type { Chapter } from "../lib/content.ts";
+
+interface Props {
+  chapter: Chapter;
+  current: string;
+}
+
+const { chapter, current } = Astro.props;
+---
+
+<nav aria-label="Formats of this chapter" class="switcher">
+  {
+    chapter.articles.map((article) => (
+      <a href={article.href} aria-current={article.format.code === current ? "page" : undefined}>
+        {article.format.name}
+      </a>
+    ))
+  }
+</nav>
+
+<style>
+  .switcher {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: var(--color-surface);
+    border-radius: var(--radius-pill);
+  }
+  a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: var(--radius-pill);
+    color: var(--color-textSecondary);
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--color-text);
+    background: var(--color-card);
+  }
+  a[aria-current="page"] {
+    background: var(--color-invertedBg);
+    color: var(--color-invertedText);
+  }
+</style>

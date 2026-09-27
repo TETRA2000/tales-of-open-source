@@ -1,0 +1,45 @@
+---
+// Up to date = cyan fill; Drifted = rust fill + light text; Planned = dashed outline.
+import type { Status } from "../lib/content.ts";
+import { STATUS_LABEL } from "../lib/status.ts";
+
+interface Props {
+  status: Status;
+  /** "meta" sits among the article meta chips; "row" ends a contents row. */
+  variant?: "meta" | "row";
+}
+
+const { status, variant = "row" } = Astro.props;
+---
+
+<span class:list={["status", status, variant]}>{STATUS_LABEL[status]}</span>
+
+<style>
+  .status {
+    display: inline-block;
+    border-radius: var(--radius-pill);
+    font-family: var(--font-body);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .row {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .meta {
+    padding: 5px 10px;
+    font-size: 13px;
+  }
+  .up_to_date {
+    background: var(--color-status-upToDate);
+    color: var(--color-onAccent);
+  }
+  .drifted {
+    background: var(--color-status-drifted);
+    color: var(--color-status-driftedText);
+  }
+  .planned {
+    border: 1px dashed var(--color-status-planned);
+    color: var(--color-textMuted);
+  }
+</style>

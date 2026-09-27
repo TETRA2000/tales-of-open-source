@@ -1,0 +1,38 @@
+---
+// Article metadata: level, reading time, repo @ short SHA, status.
+import { shortSha, type Article } from "../lib/content.ts";
+import { LEVELS } from "../lib/formats.ts";
+import StatusChip from "./StatusChip.astro";
+
+interface Props {
+  article: Article;
+  repo: string;
+}
+
+const { article, repo } = Astro.props;
+const level = LEVELS[article.level];
+---
+
+<ul class="chips" aria-label="About this article">
+  <li class="chip"><span aria-hidden="true">{level.pips} </span>{level.name}</li>
+  <li class="chip">{article.minutes} min</li>
+  <li class="chip mono" title={`${repo} @ ${article.pin}`}>{repo} @ {shortSha(article.pin)}</li>
+  <li><StatusChip status={article.status} variant="meta" /></li>
+</ul>
+
+<style>
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+  }
+  .chip {
+    padding: 5px 10px;
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-pill);
+  }
+</style>
