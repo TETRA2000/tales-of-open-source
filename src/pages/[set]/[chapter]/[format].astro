@@ -49,8 +49,8 @@ const setTitle = `${set.title}, ${set.subtitle}`;
       </div>
       {
         article.body.format === "GT" && (
-          <aside class="example" aria-label="The request we follow">
-            <div class="example-label">The request we follow</div>
+          <aside class="example" aria-label={article.body.data.example.label}>
+            <div class="example-label">{article.body.data.example.label}</div>
             <div class="example-request mono">{article.body.data.example.request}</div>
             <div class="example-target mono">→ {article.body.data.example.target}</div>
           </aside>
