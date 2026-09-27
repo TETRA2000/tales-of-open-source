@@ -72,6 +72,21 @@ describe("loadLibrary", () => {
     expect(article.body.data.steps[0].url).toBe(`https://github.com/example/demo/blob/${PIN}/lib/demo.rb#L3-L8`);
   });
 
+  it("labels the traced example, defaulting to a request", () => {
+    const article = demo.chapters[1].articles[0];
+    if (article.body.format !== "GT") throw new Error("expected GT");
+    expect(article.body.data.example.label).toBe("The request we follow");
+  });
+
+  it("uses the example label given in the article", () => {
+    const dir = copyFixture();
+    const file = join(dir, TRACE);
+    writeFileSync(file, readFileSync(file, "utf8").replace("example: {", "example: { label: The job we follow,"));
+    const [article] = loadLibrary({ contentDir: dir, openRepo: fakeRepo() }).sets[0].chapters[1].articles;
+    if (article.body.format !== "GT") throw new Error("expected GT");
+    expect(article.body.data.example.label).toBe("The job we follow");
+  });
+
   it("counts tracked symbols across the set", () => {
     expect(demo.trackedSymbolCount).toBe(1);
   });

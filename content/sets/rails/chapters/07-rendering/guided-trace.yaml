@@ -1,0 +1,301 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "# ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "From an empty action to HTML: rendering show.html.erb"
+level: practitioner
+minutes: 14
+pin: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
+example:
+  label: The render we follow
+  request: "ArticlesController#show (no render call)"
+  target: app/views/articles/show.html.erb
+steps:
+  - id: step-1
+    title: After the action, check whether anything was rendered
+    symbol: BasicImplicitRender#send_action
+    package: actionpack
+    file: actionpack/lib/action_controller/metal/basic_implicit_render.rb
+    lines: 7-11
+    body: >-
+      process_action ends by calling send_action, which calls your show method. This module wraps it:
+      after the action returns, if it neither rendered nor redirected (performed? is false),
+      default_render runs. That is why an empty action still produces a page.
+    code: |
+      def send_action(method, *args)
+        ret = super
+        default_render unless performed?
+        ret
+      end
+    next: ImplicitRender#default_render
+  - id: step-2
+    title: default_render looks before it renders
+    symbol: ImplicitRender#default_render
+    package: actionpack
+    file: actionpack/lib/action_controller/metal/implicit_render.rb
+    lines: 37-54
+    body: >-
+      ImplicitRender overrides the basic 204 No Content fallback. If a template for this action exists
+      under the controller's prefixes and the request's formats and variant, it calls render with no
+      arguments. The other branches explain why nothing matched, or fall back to head :no_content.
+    code: |
+      def default_render
+        if template_exists?(action_name.to_s, _prefixes, variants: request.variant)
+          render
+        elsif any_templates?(action_name.to_s, _prefixes)
+          # ...
+          raise ActionController::UnknownFormat, message
+        elsif interactive_browser_request?
+          # ...
+          raise ActionController::MissingExactTemplate.new(message, self.class, action_name)
+        else
+          logger.info "No template found for #{self.class.name}\##{action_name}, rendering head :no_content" if logger
+          super
+        end
+      end
+    next: "render → AbstractController::Rendering#render"
+  - id: step-3
+    title: render normalises options and stores the body
+    symbol: AbstractController::Rendering#render
+    package: actionpack
+    file: actionpack/lib/abstract_controller/rendering.rb
+    lines: 26-36
+    body: >-
+      ActionController::Rendering#render first raises DoubleRenderError if a body is already set, then
+      calls this. _normalize_render turns the arguments into an options hash, render_to_body produces a
+      string, and that string becomes response_body with a matching Content-Type.
+    code: |
+      def render(*args, &block)
+        options = _normalize_render(*args, &block)
+        rendered_body = render_to_body(options)
+        if options[:html]
+          _set_html_content_type
+        else
+          _set_rendered_content_type rendered_format
+        end
+        _set_vary_header
+        self.response_body = rendered_body
+      end
+    next: "render_to_body → ActionView::Rendering#render_to_body"
+  - id: step-4
+    title: The options gain a template name and prefixes
+    symbol: ActionView::Rendering#render_to_body
+    package: actionview
+    file: actionview/lib/action_view/rendering.rb
+    lines: 119-187
+    body: >-
+      Controller renderers such as json: get the first chance; with none given, the call reaches
+      Action View. With no template option, the template is the action name ("show"), and the search
+      prefixes are the controller's _prefixes: ["articles", "application"] for ArticlesController <
+      ApplicationController. ActionView::Layouts overrides _process_render_template_options to call this
+      one and then resolve options[:layout].
+    code: |
+      def render_to_body(options = {})
+        _process_options(options)
+        _process_render_template_options(options)
+        _render_template(options)
+      end
+      # ...
+        def _process_render_template_options(options)
+          if options[:partial] == true
+            options[:partial] = action_name
+          end
+
+          if !options.keys.intersect?([:partial, :file, :template])
+            options[:prefixes] ||= _prefixes
+          end
+
+          options[:template] ||= (options[:action] || action_name).to_s
+        end
+    next: _render_template(options)
+  - id: step-5
+    title: A view context is born
+    symbol: ActionView::Rendering#_render_template
+    package: actionview
+    file: actionview/lib/action_view/rendering.rb
+    lines: 127-143
+    body: >-
+      view_context builds a new view object (an instance of an ActionView::Base subclass made for the
+      controller) with the controller's instance variables copied in: this is the self your template runs as, and why @article is visible there. The
+      renderer's render_to_object sends a template (not partial) render to a TemplateRenderer.
+    code: |
+      def _render_template(options)
+        variant = options.delete(:variant)
+        assigns = options.delete(:assigns)
+        context = view_context
+
+        context.assign assigns if assigns
+        lookup_context.variants = variant if variant
+
+        rendered_template = context.in_rendering_context(options) do |renderer|
+          renderer.render_to_object(context, options)
+        end
+
+        rendered_format = rendered_template.format || lookup_context.formats.first
+        @_rendered_format = Template::Types[rendered_format]
+
+        rendered_template.body
+      end
+    next: "Renderer#render_to_object → TemplateRenderer#render"
+  - id: step-6
+    title: TemplateRenderer finds, then renders
+    symbol: TemplateRenderer#render
+    package: actionview
+    file: actionview/lib/action_view/renderer/template_renderer.rb
+    lines: 5-12
+    body: >-
+      determine_template goes through the ways render can be called (body:, plain:, html:, file:,
+      inline:, renderable:, template:). Ours has template: "show", so it asks the lookup context to
+      find it under the prefixes, with the request's details: formats, locale, variants and handlers.
+    code: |
+      def render(context, options)
+        @details = extract_details(options)
+        template = determine_template(options)
+
+        prepend_formats(template.format)
+
+        render_template(context, template, options[:layout], options[:locals] || {})
+      end
+    next: "LookupContext#find_template → PathSet#find → FileSystemResolver#_find_all"
+  - id: step-7
+    title: The resolver scans app/views/articles
+    symbol: FileSystemResolver#_find_all
+    package: actionview
+    file: actionview/lib/action_view/template/resolver.rb
+    lines: 131-144
+    body: >-
+      The path set tries each prefix in order against each view path, and the first non-empty result wins.
+      For "articles/show" the file system resolver globs app/views/articles/show*, parses each file name
+      into details (show.html.erb is html, erb), keeps the files that match the request and sorts them
+      by preference. The cache is keyed by path, so the glob normally runs once per template.
+    code: |
+      def _find_all(name, prefix, partial, details, key, locals)
+        requested_details = key || TemplateDetails::Requested.new(**details)
+        cache = key ? @unbound_templates : Concurrent::Map.new
+
+        unbound_templates =
+          cache.compute_if_absent(TemplatePath.virtual(name, prefix, partial)) do
+            path = TemplatePath.build(name, prefix, partial)
+            unbound_templates_from_path(path)
+          end
+
+        filter_and_sort_by_details(unbound_templates, requested_details).map do |unbound_template|
+          unbound_template.bind_locals(locals)
+        end
+      end
+    next: "back in TemplateRenderer#render → render_template"
+  - id: step-8
+    title: The template renders inside its layout
+    symbol: TemplateRenderer#render_template
+    package: actionview
+    file: actionview/lib/action_view/renderer/template_renderer.rb
+    lines: 58-83
+    body: >-
+      The template is rendered first, inside the block that render_with_layout yields to. Its output is
+      stored in view_flow under :layout, then the layout renders around it (layouts/articles if it
+      exists, otherwise the inherited layouts/application).
+      The yield in the layout reads that stored content back.
+    code: |
+      def render_template(view, template, layout_name, locals)
+        render_with_layout(view, template, layout_name, locals) do |layout|
+          ActiveSupport::Notifications.instrument(
+            "render_template.action_view",
+            identifier: template.identifier,
+            layout: layout && layout.virtual_path,
+            locals: locals
+          ) do
+            template.render(view, locals) { |*name| view._layout_for(*name) }
+          end
+        end
+      end
+
+      def render_with_layout(view, template, path, locals)
+        layout  = path && find_layout(path, locals.keys, [formats.first])
+
+        body = if layout
+          ActiveSupport::Notifications.instrument("render_layout.action_view", identifier: layout.identifier) do
+            view.view_flow.set(:layout, yield(layout))
+            layout.render(view, locals) { |*name| view._layout_for(*name) }
+          end
+        else
+          yield
+        end
+        build_rendered_template(body, template)
+      end
+    next: "Template#render(view, locals)"
+  - id: step-9
+    title: A template is a method on the view
+    symbol: ActionView::Template#render
+    package: actionview
+    file: actionview/lib/action_view/template.rb
+    lines: 271-290
+    body: >-
+      Templates are not interpreted on every request. compile! turns the template into a Ruby method
+      the first time it is needed; after that, rendering is view._run, which calls that method on the
+      view context with a fresh output buffer and returns the buffer as a string.
+    code: |
+      def render(view, locals, buffer = nil, implicit_locals: [], add_to_stack: true, &block)
+        instrument_render_template do
+          compile!(view)
+
+          if strict_locals? && @strict_local_keys && !implicit_locals.empty?
+            locals_to_ignore = implicit_locals - @strict_local_keys
+            locals.except!(*locals_to_ignore)
+          end
+
+          if buffer
+            view._run(method_name, self, locals, buffer, add_to_stack: add_to_stack, has_strict_locals: strict_locals?, &block)
+            nil
+          else
+            result = view._run(method_name, self, locals, OutputBuffer.new, add_to_stack: add_to_stack, has_strict_locals: strict_locals?, &block)
+            result.is_a?(OutputBuffer) ? result.to_s : result
+          end
+        end
+      rescue => e
+        handle_render_error(view, e)
+      end
+    next: Template#compile!(view)
+  - id: step-10
+    title: ERB becomes Ruby, once
+    symbol: ActionView::Template#compile!
+    package: actionview
+    file: actionview/lib/action_view/template.rb
+    lines: 424-444
+    body: >-
+      Compilation happens under a mutex so two threads do not compile the same template. compile asks
+      the handler (ERB here) for Ruby source and module_evals it into the view's compiled method
+      container, defining the method that _run calls. The rendered string travels back up: to
+      render_template, to response_body, and out through the middleware as the body.
+    code: |
+      def compile!(view)
+        return if @compiled
+
+        # Templates can be used concurrently in threaded environments
+        # so compilation and any instance variable modification must
+        # be synchronized
+        @compile_mutex.synchronize do
+          # Any thread holding this lock will be compiling the template needed
+          # by the threads waiting. So re-check the @compiled flag to avoid
+          # re-compilation
+          return if @compiled
+
+          mod = view.compiled_method_container
+
+          instrument("!compile_template") do
+            compile(mod)
+          end
+
+          @compiled = true
+        end
+      end
+    next: "rendered body → response_body → Metal#dispatch returns [status, headers, body]"
+tracked_symbols:
+  - { symbol: "BasicImplicitRender#send_action", file: actionpack/lib/action_controller/metal/basic_implicit_render.rb, used_in: step-1 }
+  - { symbol: "ImplicitRender#default_render", file: actionpack/lib/action_controller/metal/implicit_render.rb, used_in: step-2 }
+  - { symbol: "AbstractController::Rendering#render", file: actionpack/lib/abstract_controller/rendering.rb, used_in: step-3 }
+  - { symbol: "ActionView::Rendering#render_to_body", file: actionview/lib/action_view/rendering.rb, used_in: step-4 }
+  - { symbol: "ActionView::Rendering#_render_template", file: actionview/lib/action_view/rendering.rb, used_in: step-5 }
+  - { symbol: "TemplateRenderer#render", file: actionview/lib/action_view/renderer/template_renderer.rb, used_in: step-6 }
+  - { symbol: "FileSystemResolver#_find_all", file: actionview/lib/action_view/template/resolver.rb, used_in: step-7 }
+  - { symbol: "TemplateRenderer#render_template", file: actionview/lib/action_view/renderer/template_renderer.rb, used_in: step-8 }
+  - { symbol: "ActionView::Template#render", file: actionview/lib/action_view/template.rb, used_in: step-9 }
+  - { symbol: "ActionView::Template#compile!", file: actionview/lib/action_view/template.rb, used_in: step-10 }

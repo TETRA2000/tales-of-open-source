@@ -1,0 +1,209 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "# ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "From require to ready: how an application boots"
+level: practitioner
+minutes: 12
+pin: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
+example:
+  label: The boot we follow
+  request: require "config/environment"
+  target: Rails.application, initialized
+steps:
+  - id: step-1
+    title: config/environment.rb starts the boot
+    symbol: config/environment.rb
+    package: railties
+    file: railties/lib/rails/generators/rails/app/templates/config/environment.rb.tt
+    lines: 1-5
+    body: >-
+      Servers, consoles, runners and test helpers all begin by requiring config/environment.rb, which
+      rails new writes from this template. It is two lines of work: load the application class, then
+      initialize it. Requiring application.rb runs boot.rb (Bundler), requires the frameworks and
+      evaluates your class Application < Rails::Application body.
+    code: |
+      # Load the Rails application.
+      require_relative "application"
+
+      # Initialize the Rails application.
+      Rails.application.initialize!
+    next: class Application < Rails::Application → Rails::Application.inherited
+  - id: step-2
+    title: Subclassing registers the application class
+    symbol: Rails::Application.inherited
+    package: railties
+    file: railties/lib/rails/application.rb
+    lines: 69-76
+    body: >-
+      Nothing calls this method by name. Ruby runs the inherited hook the moment your application.rb
+      opens class Application < Rails::Application, and Rails uses it to remember your class in
+      Rails.app_class, put lib/ on the load path and fire the :before_configuration load hooks.
+      No instance exists yet.
+    code: |
+      def inherited(base)
+        super
+        Rails.app_class = base
+        # lib has to be added to $LOAD_PATH unconditionally, even if it's in the
+        # autoload paths and config.add_autoload_paths_to_load_path is false.
+        add_lib_to_load_path!(find_root(base.called_from))
+        ActiveSupport.run_load_hooks(:before_configuration, base)
+      end
+    next: Rails.application
+  - id: step-3
+    title: Rails.application builds the singleton
+    symbol: Rails.application
+    package: railties
+    file: railties/lib/rails.rb
+    lines: 44-48
+    body: >-
+      Back in config/environment.rb, Rails.application asks the registered class for its instance.
+      Railtie.instance memoises a single new object and Application.instance runs its load hooks, so
+      every later Rails.application returns the same object. Rails.initialize! is only a delegate to it.
+    code: |
+      def application
+        @application ||= (app_class.instance if app_class)
+      end
+
+      delegate :initialize!, :initialized?, to: :application
+    next: Rails::Application#initialize!
+  - id: step-4
+    title: "initialize! runs the initializers, once"
+    symbol: Rails::Application#initialize!
+    package: railties
+    file: railties/lib/rails/application.rb
+    lines: 436-441
+    body: >-
+      initialize! is a guard and one call. A second call raises, and the :default group is passed on,
+      so every initializer tagged :default or :all will run, with the application itself as argument.
+    code: |
+      def initialize!(group = :default) # :nodoc:
+        raise "Application has been already initialized." if @initialized
+        run_initializers(group, self)
+        @initialized = true
+        self
+      end
+    next: Rails::Application#initializers
+  - id: step-5
+    title: Three lists of initializers, joined
+    symbol: Rails::Application#initializers
+    package: railties
+    file: railties/lib/rails/application.rb
+    lines: 443-447
+    body: >-
+      The application overrides initializers to sandwich everything between two fixed modules:
+      Bootstrap first, then the initializers of every railtie and engine (Active Record, Action
+      Controller, your app as an engine…) in load order, then Finisher last.
+    code: |
+      def initializers # :nodoc:
+        Bootstrap.initializers_for(self) +
+        railties_initializers(super) +
+        Finisher.initializers_for(self)
+      end
+    next: Initializable#run_initializers
+  - id: step-6
+    title: A topological sort decides the order
+    symbol: Rails::Initializable#run_initializers
+    package: railties
+    file: railties/lib/rails/initializable.rb
+    lines: 100-106
+    body: >-
+      The joined list is a Collection that includes Ruby's TSort. Each initializer may name another it
+      must run before: or after:; by default each one is chained after the previous one declared in its class.
+      tsort_each walks that graph, and belongs_to? skips initializers of other groups.
+    code: |
+      def run_initializers(group = :default, *args)
+        return if instance_variable_defined?(:@ran)
+        initializers.tsort_each do |initializer|
+          initializer.run(*args) if initializer.belongs_to?(group)
+        end
+        @ran = true
+      end
+    next: Bootstrap initializers
+  - id: step-7
+    title: Bootstrap loads Active Support and the logger
+    symbol: Rails::Application::Bootstrap
+    package: railties
+    file: railties/lib/rails/application/bootstrap.rb
+    lines: 10-17
+    body: >-
+      Each initializer is declared with the class-level initializer DSL: a name, ordering options and
+      a block. Bootstrap's run first: an empty load_environment_hook used only as an anchor, loading
+      Active Support, eager-load defaults, then the logger, error reporter, cache and autoloaders.
+    code: |
+      module Bootstrap
+        include Initializable
+
+        initializer :load_environment_hook, group: :all do end
+
+        initializer :load_active_support, group: :all do
+          require "active_support/all" unless config.active_support.bare
+        end
+    next: Engine initializers
+  - id: step-8
+    title: Engines load your config files
+    symbol: Rails::Engine initializers
+    package: railties
+    file: railties/lib/rails/engine.rb
+    lines: 564-647
+    body: >-
+      Engine initializers run once for every engine, including the application itself (Application < Engine).
+      load_environment_config asks to run before Bootstrap's empty hook, which is how
+      config/environments/production.rb is required early. load_config_initializers loads each file in
+      config/initializers, sorted by name.
+    code: |
+      initializer :load_environment_config, before: :load_environment_hook, group: :all do
+        paths["config/environments"].existent.each do |environment|
+          require environment
+        end
+      end
+      # ...
+      initializer :load_config_initializers do
+        config.paths["config/initializers"].existent.sort.each do |initializer|
+          load_config_initializer(initializer)
+        end
+      end
+    next: Finisher initializers
+  - id: step-9
+    title: Finisher builds the stack and eager loads
+    symbol: Rails::Application::Finisher
+    package: railties
+    file: railties/lib/rails/application/finisher.rb
+    lines: 56-94
+    body: >-
+      Finisher runs last. It builds the middleware stack that will answer #call, runs to_prepare
+      blocks, eager loads every autoloaded constant when config.eager_load is on (production), and fires
+      :after_initialize. initialize! then marks the app initialized and returns it.
+    code: |
+      initializer :build_middleware_stack do
+        build_middleware_stack
+      end
+      # ...
+      initializer :run_prepare_callbacks do |app|
+        app.reloader.prepare!
+      end
+
+      initializer :eager_load! do |app|
+        if config.eager_load
+          ActiveSupport.run_load_hooks(:before_eager_load, self)
+          Zeitwerk::Loader.eager_load_all
+          Rails.eager_load!
+          config.eager_load_namespaces.each(&:eager_load!)
+          # ...
+        end
+      end
+
+      # All initialization is done, including eager loading in production
+      initializer :finisher_hook do
+        ActiveSupport.run_load_hooks(:after_initialize, self)
+      end
+    next: "Rails.application is ready: run Rails.application (chapter 04)"
+tracked_symbols:
+  - { symbol: "config/environment.rb", file: railties/lib/rails/generators/rails/app/templates/config/environment.rb.tt, used_in: step-1 }
+  - { symbol: "Rails::Application.inherited", file: railties/lib/rails/application.rb, used_in: step-2 }
+  - { symbol: "Rails.application", file: railties/lib/rails.rb, used_in: step-3 }
+  - { symbol: "Rails::Application#initialize!", file: railties/lib/rails/application.rb, used_in: step-4 }
+  - { symbol: "Rails::Application#initializers", file: railties/lib/rails/application.rb, used_in: step-5 }
+  - { symbol: "Rails::Initializable#run_initializers", file: railties/lib/rails/initializable.rb, used_in: step-6 }
+  - { symbol: "Rails::Application::Bootstrap", file: railties/lib/rails/application/bootstrap.rb, used_in: step-7 }
+  - { symbol: "Rails::Engine initializers", file: railties/lib/rails/engine.rb, used_in: step-8 }
+  - { symbol: "Rails::Application::Finisher", file: railties/lib/rails/application/finisher.rb, used_in: step-9 }

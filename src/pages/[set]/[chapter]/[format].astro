@@ -49,8 +49,8 @@ const setTitle = `${set.title}, ${set.subtitle}`;
       </div>
       {
         article.body.format === "GT" && (
-          <aside class="example" aria-label="The request we follow">
-            <div class="example-label">The request we follow</div>
+          <aside class="example" aria-label={article.body.data.example.label}>
+            <div class="example-label">{article.body.data.example.label}</div>
             <div class="example-request mono">{article.body.data.example.request}</div>
             <div class="example-target mono">→ {article.body.data.example.target}</div>
           </aside>
@@ -70,6 +70,7 @@ const setTitle = `${set.title}, ${set.subtitle}`;
   }
   .head-main {
     grid-column: span 8;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -81,9 +82,11 @@ const setTitle = `${set.title}, ${set.subtitle}`;
     line-height: 1.04;
     font-weight: 500;
     letter-spacing: -0.01em;
+    overflow-wrap: break-word;
   }
   .example {
     grid-column: 9 / span 4;
+    min-width: 0;
     padding: 18px 20px;
     background: var(--color-invertedBg);
     color: var(--color-invertedText);
@@ -104,6 +107,11 @@ const setTitle = `${set.title}, ${set.subtitle}`;
   .example-target {
     font-size: 13px;
     color: var(--color-invertedMuted);
+  }
+  /* Code-like strings (SQL, constants) have few spaces; let them break anywhere. */
+  .example-request,
+  .example-target {
+    overflow-wrap: anywhere;
   }
   @media (max-width: 900px) {
     .head-main,

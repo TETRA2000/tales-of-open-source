@@ -158,6 +158,8 @@
   line-height: 1.6;
   color: #e2ded7; /* artboard body colour, between text and textSecondary */
   text-wrap: pretty;
+  /* Long identifiers (ActiveRecord.after_all_transactions_commit) must not widen a phone screen. */
+  overflow-wrap: break-word;
 }
 
 .gt-code {

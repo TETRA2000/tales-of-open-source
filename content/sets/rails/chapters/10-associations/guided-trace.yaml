@@ -1,0 +1,279 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "# ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "article.comments.to_a: from macro to SELECT"
+level: practitioner
+minutes: 14
+pin: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
+example:
+  label: The call we follow
+  request: "has_many :comments, then article.comments.to_a"
+  target: SELECT "comments".* FROM "comments" WHERE "comments"."article_id" = ?
+steps:
+  - id: step-1
+    title: has_many is a class method that builds a reflection
+    symbol: Associations::ClassMethods#has_many
+    package: activerecord
+    file: activerecord/lib/active_record/associations.rb
+    lines: 1427-1430
+    body: >-
+      has_many :comments runs once, when the Article class body is evaluated. It hands the work to
+      a builder and stores what comes back, a reflection: the description of the association (name,
+      class, foreign key, options) that everything later asks questions of.
+    code: |
+      def has_many(name, scope = nil, **options, &extension)
+        reflection = Builder::HasMany.build(self, name, scope, options, &extension)
+        Reflection.add_reflection(self, name, reflection)
+      end
+    next: Builder::HasMany.build
+  - id: step-2
+    title: The builder defines methods on the model
+    symbol: Builder::Association.build
+    package: activerecord
+    file: activerecord/lib/active_record/associations/builder/association.rb
+    lines: 25-38
+    body: >-
+      Builder::HasMany inherits build from Builder::Association. After refusing names that clash with
+      Active Record's own methods, it creates the HasManyReflection, then defines the accessor methods,
+      callbacks (such as those for dependent:), validations and change-tracking helpers.
+    code: |
+      def self.build(model, name, scope, options, &block)
+        if model.dangerous_attribute_method?(name)
+          raise ArgumentError, "You tried to define an association named #{name} on the model #{model.name}, but " \
+                               "this will conflict with a method #{name} already defined by Active Record. " \
+                               "Please choose a different association name."
+        end
+
+        reflection = create_reflection(model, name, scope, options, &block)
+        define_accessors(model, reflection)
+        define_callbacks(model, reflection)
+        define_validations(model, reflection)
+        define_change_tracking_methods(model, reflection)
+        reflection
+      end
+    next: define_accessors → define_readers
+  - id: step-3
+    title: "The comments method is generated code"
+    symbol: Builder::Association.define_readers
+    package: activerecord
+    file: activerecord/lib/active_record/associations/builder/association.rb
+    lines: 102-110
+    body: >-
+      The reader is written as a string and class_eval'd into the model's generated association
+      methods module, so it can be overridden in the model and still reached with super. Every
+      association reader has the same three lines: fetch the association object, then ask it for its reader.
+    code: |
+      def self.define_readers(mixin, name)
+        mixin.class_eval <<-CODE, __FILE__, __LINE__ + 1
+          def #{name}
+            association = association(:#{name})
+            deprecated_associations_api_guard(association, __method__)
+            association.reader
+          end
+        CODE
+      end
+    next: "article.comments → Associations#association(:comments)"
+  - id: step-4
+    title: One association object per record and name
+    symbol: Associations#association
+    package: activerecord
+    file: activerecord/lib/active_record/associations.rb
+    lines: 53-65
+    body: >-
+      Each record keeps a cache of association objects. The first call looks up the reflection and asks it
+      which class models this kind of association (HasManyAssociation for a plain has_many), then
+      instantiates it with the owner (the article) and the reflection. Later calls reuse it.
+    code: |
+      def association(name) # :nodoc:
+        association = association_instance_get(name)
+
+        if association.nil?
+          unless reflection = self.class._reflect_on_association(name)
+            raise AssociationNotFoundError.new(self, name)
+          end
+          association = reflection.association_class.new(self, reflection)
+          association_instance_set(name, association)
+        end
+
+        association
+      end
+    next: CollectionAssociation#reader
+  - id: step-5
+    title: The reader returns a proxy, not records
+    symbol: CollectionAssociation#reader
+    package: activerecord
+    file: activerecord/lib/active_record/associations/collection_association.rb
+    lines: 34-43
+    body: >-
+      article.comments has run no SQL yet. It returns a CollectionProxy, which is a Relation that also
+      knows its association. That is why article.comments.where(...) and .count can build their own
+      queries, while methods that need the records, like to_a, load them.
+    code: |
+      def reader
+        ensure_klass_exists!
+
+        if stale_target?
+          reload
+        end
+
+        @proxy ||= CollectionProxy.create(klass, self)
+        @proxy.reset_scope
+      end
+    next: "CollectionProxy#to_a → Relation#to_ary → records"
+  - id: step-6
+    title: to_a asks the association to load
+    symbol: CollectionProxy#records
+    package: activerecord
+    file: activerecord/lib/active_record/associations/collection_proxy.rb
+    lines: 1028-1030
+    body: >-
+      to_a comes from Relation, where it is an alias of to_ary, which returns records.dup. A plain
+      Relation's records runs its own query; CollectionProxy overrides records to delegate to
+      load_target, which it forwards to the association. Loading is the association's job, so the
+      loaded records are cached on it.
+    code: |
+      def records # :nodoc:
+        load_target
+      end
+    next: CollectionAssociation#load_target
+  - id: step-7
+    title: Load once, keep what is already in memory
+    symbol: CollectionAssociation#load_target
+    package: activerecord
+    file: activerecord/lib/active_record/associations/collection_association.rb
+    lines: 276-283
+    body: >-
+      find_target? is false when the association is already loaded, or when the owner is an unsaved
+      record with no key. Otherwise the database rows are merged with any records already built in memory
+      (article.comments.build), and the association is marked loaded.
+    code: |
+      def load_target
+        if find_target?
+          @target = merge_target_lists(find_target, target)
+        end
+
+        loaded!
+        target
+      end
+    next: Association#find_target
+  - id: step-8
+    title: A cached statement, keyed by the reflection
+    symbol: Association#find_target
+    package: activerecord
+    file: activerecord/lib/active_record/associations/association.rb
+    lines: 260-286
+    body: >-
+      After the strict_loading check comes a fast path. Unless the association has its own scope, the
+      model has a default scope or eager loading is involved, no Relation is built per call. The
+      reflection keys a statement cache: the first time, the block builds the scope with a bind
+      placeholder for the owner's key; later calls only compute the bind values (the article's id)
+      and execute. Where Rails can find the inverse association, each loaded comment gets
+      comment.article set to the owner without another query.
+    code: |
+      def find_target(async: false)
+        if violates_strict_loading?
+          Base.strict_loading_violation!(owner: owner.class, reflection: reflection)
+        end
+
+        scope = self.scope
+        if skip_statement_cache?(scope)
+          if async
+            return scope.load_async.then(&:to_a)
+          else
+            return scope.to_a
+          end
+        end
+
+        sc = reflection.association_scope_cache(klass, owner) do |params|
+          as = AssociationScope.create { params.bind }
+          target_scope.merge!(as.scope(self))
+        end
+
+        binds = AssociationScope.get_bind_values(owner, reflection.chain)
+        klass.with_connection do |c|
+          sc.execute(binds, c, async: async) do |record|
+            set_inverse_instance(record)
+            set_strict_loading(record)
+          end
+        end
+      end
+    next: AssociationScope#scope(association)
+  - id: step-9
+    title: The foreign key becomes a WHERE clause
+    symbol: AssociationScope#scope
+    package: activerecord
+    file: activerecord/lib/active_record/associations/association_scope.rb
+    lines: 21-75
+    body: >-
+      The scope starts from Comment.unscoped and adds one constraint per link in the reflection chain
+      (a single link for a plain has_many). For has_many, join_primary_key is the foreign key on the
+      target (article_id) and join_foreign_key is the owner's primary key (id), so the last link
+      reads article.id and applies comments.article_id = that value, here a bind placeholder.
+    code: |
+      def scope(association)
+        klass = association.klass
+        reflection = association.reflection
+        scope = klass.unscoped
+        owner = association.owner
+        chain = get_chain(reflection, association, scope.alias_tracker)
+
+        scope.extending! reflection.extensions
+        scope = add_constraints(scope, owner, chain)
+        scope.limit!(1) unless reflection.collection?
+        scope
+      end
+      # ...
+        def last_chain_scope(scope, reflection, owner)
+          primary_key = Array(reflection.join_primary_key)
+          foreign_key = Array(reflection.join_foreign_key)
+
+          table = reflection.aliased_table
+          primary_key_foreign_key_pairs = primary_key.zip(foreign_key)
+          primary_key_foreign_key_pairs.each do |join_key, foreign_key|
+            value = transform_value(owner._read_attribute(foreign_key))
+            scope = apply_scope(scope, table, join_key, value)
+          end
+
+          if reflection.type
+            polymorphic_type = transform_value(owner.class.polymorphic_name)
+            scope = apply_scope(scope, table, reflection.type, polymorphic_type)
+          end
+
+          scope
+        end
+    next: "StatementCache#execute(binds, connection)"
+  - id: step-10
+    title: Bind the id, run the SQL, build Comments
+    symbol: StatementCache#execute
+    package: activerecord
+    file: activerecord/lib/active_record/statement_cache.rb
+    lines: 149-160
+    body: >-
+      The cached query builder already holds the SQL with placeholders; execute binds the article's id
+      into it and runs find_by_sql, which instantiates one Comment per row. The records return to
+      load_target, are stored on the association, and to_a hands back a copy of the array.
+    code: |
+      def execute(params, connection, async: false, &block)
+        bind_values = @bind_map.bind params
+        sql = @query_builder.sql_for bind_values, connection
+
+        if async
+          @model.async_find_by_sql(sql, bind_values, preparable: true, allow_retry: @query_builder.retryable, &block)
+        else
+          @model.find_by_sql(sql, bind_values, preparable: true, allow_retry: @query_builder.retryable, &block)
+        end
+      rescue ::RangeError
+        async ? Promise::Complete.new([]) : []
+      end
+    next: "Querying#find_by_sql → [#<Comment>, …]"
+tracked_symbols:
+  - { symbol: "Associations::ClassMethods#has_many", file: activerecord/lib/active_record/associations.rb, used_in: step-1 }
+  - { symbol: "Builder::Association.build", file: activerecord/lib/active_record/associations/builder/association.rb, used_in: step-2 }
+  - { symbol: "Builder::Association.define_readers", file: activerecord/lib/active_record/associations/builder/association.rb, used_in: step-3 }
+  - { symbol: "Associations#association", file: activerecord/lib/active_record/associations.rb, used_in: step-4 }
+  - { symbol: "CollectionAssociation#reader", file: activerecord/lib/active_record/associations/collection_association.rb, used_in: step-5 }
+  - { symbol: "CollectionProxy#records", file: activerecord/lib/active_record/associations/collection_proxy.rb, used_in: step-6 }
+  - { symbol: "CollectionAssociation#load_target", file: activerecord/lib/active_record/associations/collection_association.rb, used_in: step-7 }
+  - { symbol: "Association#find_target", file: activerecord/lib/active_record/associations/association.rb, used_in: step-8 }
+  - { symbol: "AssociationScope#scope", file: activerecord/lib/active_record/associations/association_scope.rb, used_in: step-9 }
+  - { symbol: "StatementCache#execute", file: activerecord/lib/active_record/statement_cache.rb, used_in: step-10 }

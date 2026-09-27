@@ -1,0 +1,321 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "# ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "resources :articles, from routes.rb to a match"
+level: practitioner
+minutes: 14
+pin: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
+example:
+  label: The route we follow
+  request: "resources :articles, then GET /articles/42"
+  target: "{ controller: \"articles\", action: \"show\", id: \"42\" }"
+steps:
+  - id: step-1
+    title: draw evaluates routes.rb on a Mapper
+    symbol: RouteSet#draw
+    package: actionpack
+    file: actionpack/lib/action_dispatch/routing/route_set.rb
+    lines: 457-479
+    body: >-
+      Rails.application.routes is a RouteSet. The block in config/routes.rb is run with instance_exec
+      on a fresh Mapper, so resources, get and scope are Mapper methods, and self inside the block is
+      the mapper. finalize! runs once the block has finished.
+    code: |
+      def draw(&block)
+        clear! unless @disable_clear_and_finalize
+        eval_block(block)
+        finalize! unless @disable_clear_and_finalize
+        nil
+      end
+      # ...
+      def eval_block(block)
+        mapper = Mapper.new(self)
+        if default_scope
+          mapper.with_default_scope(default_scope, &block)
+        else
+          mapper.instance_exec(&block)
+        end
+      end
+    next: "Mapper#resources(:articles)"
+  - id: step-2
+    title: resources opens a scope and declares seven actions
+    symbol: Mapper::Resources#resources
+    package: actionpack
+    file: actionpack/lib/action_dispatch/routing/mapper.rb
+    lines: 1673-1691
+    body: >-
+      resources does not add routes itself. It builds a Resource describing "articles" (its path,
+      param, allowed actions), opens a scope for it, and inside that scope calls the ordinary route
+      helpers: get :index and post :create on the collection, get :new, then the member routes.
+      Your own block runs first, so nested routes you declare come before the defaults.
+    code: |
+      with_scope_level(:resources) do
+        options = apply_action_options :resources, options
+        resource_scope(Resource.new(resources.pop, api_only?, @scope[:shallow], **options)) do
+          yield if block_given?
+
+          concerns(*concerns) if concerns
+
+          collection do
+            get  :index if parent_resource.actions.include?(:index)
+            post :create if parent_resource.actions.include?(:create)
+          end
+
+          new do
+            get :new
+          end if parent_resource.actions.include?(:new)
+
+          set_member_mappings_for_resource
+        end
+      end
+    next: set_member_mappings_for_resource
+  - id: step-3
+    title: The member scope adds /:id
+    symbol: Mapper::Resources#set_member_mappings_for_resource
+    package: actionpack
+    file: actionpack/lib/action_dispatch/routing/mapper.rb
+    lines: 2108-2118
+    body: >-
+      member pushes a path scope of "articles/:id" (Resource#member_scope), so every route declared in
+      it lives under /articles/:id. get :show is the line our request will match. Like every verb helper,
+      get goes through match and map_match before a route is added.
+    code: |
+      def set_member_mappings_for_resource # :doc:
+        member do
+          get :edit if parent_resource.actions.include?(:edit)
+          get :show if parent_resource.actions.include?(:show)
+          if parent_resource.actions.include?(:update)
+            patch :update
+            put   :update
+          end
+          delete :destroy if parent_resource.actions.include?(:destroy)
+        end
+      end
+    next: "get :show → match → map_match → Mapper#add_route"
+  - id: step-4
+    title: The path string becomes a Journey AST
+    symbol: Mapper::Resources#add_route
+    package: actionpack
+    file: actionpack/lib/action_dispatch/routing/mapper.rb
+    lines: 2195-2215
+    body: >-
+      show is a canonical action, so path_for_action returns the scope path unchanged: /articles/:id.
+      normalize_path appends an optional (.:format) and Journey's parser turns the string into a tree of
+      nodes (slashes, literals, symbols, groups). Mapping.build pairs that tree with the controller,
+      action, verb and constraints.
+    code: |
+      def add_route(action, controller, as, options_action, _path, to, via, formatted, anchor, options_constraints, internal, options_mapping)
+        path = path_for_action(action, _path)
+        raise ArgumentError, "path is required" if path.blank?
+
+        action = action.to_s
+
+        default_action = options_action || @scope[:action]
+
+        if /^[\w\-\/]+$/.match?(action)
+          default_action ||= action.tr("-", "_") unless action.include?("/")
+        else
+          action = nil
+        end
+
+        as   = name_for_action(as, action) if as
+        path = Mapping.normalize_path URI::RFC2396_PARSER.escape(path), formatted
+        ast  = Journey::Parser.parse path
+
+        mapping = Mapping.build(@scope, @set, ast, controller, default_action, to, via, formatted, options_constraints, anchor, internal, options_mapping)
+        @set.add_route(mapping, as)
+      end
+    next: RouteSet#add_route(mapping, as)
+  - id: step-5
+    title: The route set records a name
+    symbol: RouteSet#add_route
+    package: actionpack
+    file: actionpack/lib/action_dispatch/routing/route_set.rb
+    lines: 643-672
+    body: >-
+      The RouteSet validates the route name and refuses duplicates, then hands the mapping to its
+      Journey::Routes table. Named routes are what generate helpers such as article_path(42).
+    code: |
+      def add_route(mapping, name)
+        raise ArgumentError, "Invalid route name: '#{name}'" unless name.blank? || name.to_s.match(/^[_a-z]\w*$/i)
+        # ...
+        route = @set.add_route(name, mapping)
+        named_routes[name] = route if name
+        # ...
+        route
+      end
+    next: Journey::Routes#add_route
+  - id: step-6
+    title: The routes table and its lazy matcher
+    symbol: Journey::Routes#add_route
+    package: actionpack
+    file: actionpack/lib/action_dispatch/journey/routes.rb
+    lines: 45-73
+    body: >-
+      make_route builds a Journey::Route whose precedence is its position in the table, so routes
+      defined earlier win. Most routes are anchored and join one big Or node; adding a route throws away
+      the cached simulator, which is rebuilt from that Or tree on its next use (the router builds it
+      eagerly at boot when eager loading is on).
+    code: |
+      def partition_route(route)
+        if route.path.anchored && route.path.requirements_anchored?
+          anchored_routes << route
+        else
+          custom_routes << route
+        end
+      end
+
+      def ast
+        @ast ||= begin
+          nodes = anchored_routes.map(&:ast)
+          Nodes::Or.new(nodes)
+        end
+      end
+
+      def simulator
+        @simulator ||= begin
+          gtg = GTG::Builder.new(ast).transition_table
+          GTG::Simulator.new(gtg)
+        end
+      end
+
+      def add_route(name, mapping)
+        route = mapping.make_route name, routes.length
+        routes << route
+        partition_route(route)
+        clear_cache!
+        route
+      end
+    next: "GET /articles/42 → Journey::Router#recognize (called from #serve, chapter 04)"
+  - id: step-7
+    title: recognize narrows the candidates
+    symbol: Journey::Router#recognize
+    package: actionpack
+    file: actionpack/lib/action_dispatch/journey/router.rb
+    lines: 43-64
+    body: >-
+      At request time the router does not try every route in turn. filter_routes asks the simulator
+      which anchored routes can match this path; custom (unanchored) routes are tested by regexp. The
+      survivors are filtered by verb and constraints with matches?, then sorted by precedence.
+    code: |
+      def recognize(req, &block)
+        req_params  = req.path_parameters
+        path_info   = req.path_info
+        script_name = req.script_name
+
+        routes = filter_routes(path_info)
+
+        custom_routes.each { |r|
+          routes << r if r.path.match?(path_info)
+        }
+
+        if req.head?
+          routes = match_head_routes(routes, req)
+        else
+          routes.select! { |r| r.matches?(req) }
+        end
+
+        if routes.size > 1
+          routes.sort! do |a, b|
+            a.precedence <=> b.precedence
+          end
+        end
+    next: "filter_routes → GTG::Simulator#memos(\"/articles/42\")"
+  - id: step-8
+    title: The simulator walks the path once
+    symbol: GTG::Simulator#memos
+    package: actionpack
+    file: actionpack/lib/action_dispatch/journey/gtg/simulator.rb
+    lines: 31-67
+    body: >-
+      The path is split into tokens: "/", "." and "?" on their own, everything else as a segment.
+      Each token moves a set of states in one transition table built from every anchored route, so
+      the path is read once instead of being tested against each route. Accepting states carry memos:
+      the routes that end there. If none accept, the block given by filter_routes returns [].
+    code: |
+      def memos(string)
+        state = INITIAL_STATE
+
+        pos = 0
+        eos = string.bytesize
+
+        while pos < eos
+          start_index = pos
+          pos += 1
+
+          if (token = STATIC_TOKENS[string.getbyte(start_index)])
+            state = tt.move(state, string, token, start_index, false)
+          else
+            while pos < eos && STATIC_TOKENS[string.getbyte(pos)].nil?
+              pos += 1
+            end
+
+            token = string.byteslice(start_index, pos - start_index)
+            state = tt.move(state, string, token, start_index, true)
+          end
+        end
+
+        acceptance_states = []
+        states_count = state.size
+        i = 0
+        while i < states_count
+          if state[i + 1].nil?
+            s = state[i]
+            if tt.accepting?(s)
+              acceptance_states.concat(tt.memo(s))
+            end
+          end
+          i += 2
+        end
+
+        acceptance_states.empty? ? yield : acceptance_states
+      end
+    next: back in recognize, for each candidate route
+  - id: step-9
+    title: Captures become path parameters
+    symbol: Journey::Router#recognize
+    package: actionpack
+    file: actionpack/lib/action_dispatch/journey/router.rb
+    lines: 66-99
+    body: >-
+      For each remaining route, the route's own regexp is matched against the path to capture named
+      segments. The route's defaults (controller "articles", action "show") are merged first and each
+      capture (id "42") is unescaped and added on top. The route and its parameters are yielded to serve.
+    code: |
+      routes.each do |r|
+        match_data = r.path.match(path_info)
+
+        path_parameters = req_params.merge r.defaults
+
+        index = 1
+        match_data.names.each do |name|
+          if val = match_data[index]
+            val = if val.include?("%")
+              CGI.unescapeURIComponent(val)
+            else
+              val
+            end
+            val.force_encoding(::Encoding::UTF_8)
+            path_parameters[name.to_sym] = val
+          end
+          index += 1
+        end
+
+        if r.path.anchored
+          yield(r, path_parameters)
+        else
+          # ...
+        end
+
+        req.path_parameters = req_params
+      end
+    next: "Journey::Router#serve → route.app.serve(req) (chapter 04, step 5)"
+tracked_symbols:
+  - { symbol: "RouteSet#draw", file: actionpack/lib/action_dispatch/routing/route_set.rb, used_in: step-1 }
+  - { symbol: "Mapper::Resources#resources", file: actionpack/lib/action_dispatch/routing/mapper.rb, used_in: step-2 }
+  - { symbol: "Mapper::Resources#set_member_mappings_for_resource", file: actionpack/lib/action_dispatch/routing/mapper.rb, used_in: step-3 }
+  - { symbol: "Mapper::Resources#add_route", file: actionpack/lib/action_dispatch/routing/mapper.rb, used_in: step-4 }
+  - { symbol: "RouteSet#add_route", file: actionpack/lib/action_dispatch/routing/route_set.rb, used_in: step-5 }
+  - { symbol: "Journey::Routes#add_route", file: actionpack/lib/action_dispatch/journey/routes.rb, used_in: step-6 }
+  - { symbol: "Journey::Router#recognize", file: actionpack/lib/action_dispatch/journey/router.rb, used_in: step-7 }
+  - { symbol: "GTG::Simulator#memos", file: actionpack/lib/action_dispatch/journey/gtg/simulator.rb, used_in: step-8 }

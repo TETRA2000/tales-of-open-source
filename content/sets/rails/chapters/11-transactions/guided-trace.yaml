@@ -1,0 +1,311 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "# ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "article.save: the transaction around every save"
+level: practitioner
+minutes: 14
+pin: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
+example:
+  label: The call we follow
+  request: "Article.new(title: \"Hello\").save"
+  target: BEGIN · INSERT · COMMIT · after_commit
+steps:
+  - id: step-1
+    title: save is wrapped before it saves
+    symbol: Transactions#save
+    package: activerecord
+    file: activerecord/lib/active_record/transactions.rb
+    lines: 383-385
+    body: >-
+      ActiveRecord::Base includes Transactions after Persistence, Validations and Callbacks, so this save
+      wraps all of theirs. It does no saving itself: it opens a transaction and calls super inside it.
+      save!, touch and destroy are wrapped the same way.
+    code: |
+      def save(**) # :nodoc:
+        with_transaction_returning_status { super }
+      end
+    next: with_transaction_returning_status
+  - id: step-2
+    title: false from save means ROLLBACK
+    symbol: Transactions#with_transaction_returning_status
+    package: activerecord
+    file: activerecord/lib/active_record/transactions.rb
+    lines: 431-448
+    body: >-
+      The record enrols itself in the transaction it is about to open (add_to_transaction) and remembers
+      its current state, so an id or new_record? flag can be restored on rollback. If the block returns
+      false, as save does when validation fails, it raises ActiveRecord::Rollback to undo the work.
+    code: |
+      def with_transaction_returning_status
+        self.class.with_connection do |connection|
+          connection.pool.with_pool_transaction_isolation_level(ActiveRecord.default_transaction_isolation_level, connection.transaction_open?) do
+            status = nil
+            ensure_finalize = !connection.transaction_open?
+
+            connection.transaction do
+              add_to_transaction(ensure_finalize || has_transactional_callbacks?)
+              remember_transaction_record_state
+
+              status = yield
+              raise ActiveRecord::Rollback unless status
+            end
+            @_last_transaction_return_status = status
+            status
+          end
+        end
+      end
+    next: "connection.transaction"
+  - id: step-3
+    title: Join the open transaction, or start one
+    symbol: DatabaseStatements#transaction
+    package: activerecord
+    file: activerecord/lib/active_record/connection_adapters/abstract/database_statements.rb
+    lines: 355-382
+    body: >-
+      If a joinable transaction is already open (you called save inside Article.transaction do … end),
+      the block simply runs in it. Otherwise the connection's transaction manager opens a new one.
+      ActiveRecord::Rollback is swallowed here, which is why a failed save returns false instead of raising.
+    code: |
+      def transaction(requires_new: nil, isolation: nil, joinable: true, &block)
+        # ... (isolation hint inside test fixtures' transaction)
+        if !requires_new && current_transaction.joinable?
+          if isolation && current_transaction.isolation != isolation
+            raise ActiveRecord::TransactionIsolationError, "cannot set isolation when joining a transaction"
+          end
+          yield current_transaction.user_transaction
+        else
+          within_new_transaction(isolation: isolation, joinable: joinable, &block)
+        end
+      rescue ActiveRecord::Rollback
+        # rollbacks are silently swallowed
+      end
+    next: TransactionManager#within_new_transaction
+  - id: step-4
+    title: Begin, yield, then commit or roll back
+    symbol: TransactionManager#within_new_transaction
+    package: activerecord
+    file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb
+    lines: 643-677
+    body: >-
+      This is the frame every transaction runs in. Any exception from the block, including the Rollback
+      from step 2, rolls back and is re-raised. If the block finishes normally, the transaction is
+      committed, unless the thread is being killed, when it is rolled back instead of committing half-done work.
+    code: |
+      def within_new_transaction(isolation: nil, joinable: true)
+        isolation ||= @connection.pool.pool_transaction_isolation_level
+        @connection.lock.synchronize do
+          transaction = begin_transaction(isolation: isolation, joinable: joinable)
+          begin
+            yield transaction.user_transaction
+          rescue Exception => error
+            rollback_transaction
+            after_failure_actions(transaction, error)
+
+            raise
+          ensure
+            unless error
+              if Thread.current.status == "aborting"
+                rollback_transaction
+              else
+                begin
+                  commit_transaction
+                rescue ActiveRecord::ConnectionFailed
+                  transaction.invalidate! unless transaction.state.completed?
+                  raise
+                rescue Exception
+                  rollback_transaction(transaction) unless transaction.state.completed?
+                  raise
+                end
+              end
+            end
+          end
+        ensure
+          unless transaction&.state&.completed?
+            @connection.throw_away!
+            transaction&.incomplete!
+          end
+        end
+      end
+    next: TransactionManager#begin_transaction
+  - id: step-5
+    title: A transaction object, with BEGIN deferred
+    symbol: TransactionManager#begin_transaction
+    package: activerecord
+    file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb
+    lines: 527-567
+    body: >-
+      With an empty stack this is a RealTransaction; nested ones become savepoints. Commit callbacks
+      run only in a transaction whose parent is not joinable, which in ordinary code means the
+      outermost. With adapters that support lazy transactions (SQLite and PostgreSQL among them), BEGIN
+      is not sent yet: the first query on the connection materialises every pending transaction first,
+      so a save that runs no SQL costs no round trip.
+    code: |
+      def begin_transaction(isolation: nil, joinable: true, _lazy: true)
+        @connection.lock.synchronize do
+          run_commit_callbacks = !current_transaction.joinable?
+          transaction =
+            if @stack.empty?
+              RealTransaction.new(
+                @connection,
+                isolation: isolation,
+                joinable: joinable,
+                run_commit_callbacks: run_commit_callbacks
+              )
+            elsif current_transaction.restartable?
+              # ...
+            else
+              SavepointTransaction.new(
+                @connection,
+                "active_record_#{@stack.size}",
+                current_transaction,
+                isolation: isolation,
+                joinable: joinable,
+                run_commit_callbacks: run_commit_callbacks
+              )
+            end
+
+          unless transaction.materialized?
+            if @connection.supports_lazy_transactions? && lazy_transactions_enabled? && _lazy
+              @has_unmaterialized_transactions = true
+            else
+              transaction.materialize!
+            end
+          end
+          @stack.push(transaction)
+          transaction
+        end
+      end
+    next: "yield → super → Validations#save"
+  - id: step-6
+    title: Validations run inside the transaction
+    symbol: Validations#save
+    package: activerecord
+    file: activerecord/lib/active_record/validations.rb
+    lines: 47-49
+    body: >-
+      super from Transactions#save lands here. If validations fail, save returns false and step 2 turns
+      that into a rollback. Otherwise super continues to Persistence#save, whose create_or_update runs
+      the before/after save callbacks around an INSERT. With a lazy transaction that INSERT is the first
+      query, so BEGIN goes out just before it.
+    code: |
+      def save(**options)
+        perform_validations(options) ? super : false
+      end
+    next: "block returns true → TransactionManager#commit_transaction"
+  - id: step-7
+    title: Pop the stack and commit
+    symbol: TransactionManager#commit_transaction
+    package: activerecord
+    file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb
+    lines: 614-629
+    body: >-
+      before_commit callbacks run while the transaction is still open. Then it is popped off the stack,
+      committed on the database, and only after that are the enrolled records told about it.
+    code: |
+      def commit_transaction
+        @connection.lock.synchronize do
+          transaction = @stack.last
+
+          begin
+            transaction.before_commit_records
+          ensure
+            @stack.pop
+          end
+
+          dirty_current_transaction if transaction.dirty?
+
+          transaction.commit
+          transaction.commit_records
+        end
+      end
+    next: RealTransaction#commit
+  - id: step-8
+    title: COMMIT, if BEGIN was ever sent
+    symbol: RealTransaction#commit
+    package: activerecord
+    file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb
+    lines: 508-515
+    body: >-
+      A transaction that was never materialised has nothing to commit on the server, so only its state
+      changes. Ours was, so the adapter sends COMMIT; a savepoint would release the savepoint instead.
+    code: |
+      def commit
+        if materialized?
+          connection.commit_db_transaction
+          connection.reset_isolation_level if isolation_level
+        end
+        @state.full_commit!
+        @instrumenter.finish(:commit) if materialized?
+      end
+    next: Transaction#commit_records
+  - id: step-9
+    title: Committed records get their callbacks
+    symbol: Transaction#commit_records
+    package: activerecord
+    file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb
+    lines: 309-336
+    body: >-
+      Each record enrolled in step 2 is visited once. The outermost transaction calls committed! on it;
+      an inner one hands its records to the parent, so after_commit waits until the real COMMIT.
+    code: |
+      def commit_records
+        if records
+          begin
+            ite = unique_records
+
+            if @run_commit_callbacks
+              instances_to_run_callbacks_on = prepare_instances_to_run_callbacks_on(ite)
+
+              run_action_on_records(ite, instances_to_run_callbacks_on) do |record, should_run_callbacks|
+                record.committed!(should_run_callbacks: should_run_callbacks)
+              end
+            else
+              while record = ite.shift
+                # if not running callbacks, only adds the record to the parent transaction
+                connection.add_transaction_record(record)
+              end
+            end
+          ensure
+            ite&.each { |i| i.committed!(should_run_callbacks: false) }
+          end
+        end
+
+        if @run_commit_callbacks
+          @callbacks&.each(&:after_commit)
+        elsif @callbacks
+          connection.current_transaction.append_callbacks(@callbacks)
+        end
+      end
+    next: Transactions#committed!
+  - id: step-10
+    title: after_commit runs, after the data is visible
+    symbol: Transactions#committed!
+    package: activerecord
+    file: activerecord/lib/active_record/transactions.rb
+    lines: 403-411
+    body: >-
+      committed! clears the saved state and runs the commit callbacks (after_commit, after_create_commit…).
+      Because they run after COMMIT, other connections can already see the row, which makes this the
+      safe place to enqueue a job that will read it. Back in step 2, status true is returned: save is true.
+    code: |
+      def committed!(should_run_callbacks: true) # :nodoc:
+        @_start_transaction_state = nil
+        if should_run_callbacks
+          @_committed_already_called = true
+          _run_commit_callbacks
+        end
+      ensure
+        @_committed_already_called = @_trigger_update_callback = @_trigger_destroy_callback = false
+      end
+    next: "save returns true"
+tracked_symbols:
+  - { symbol: "Transactions#save", file: activerecord/lib/active_record/transactions.rb, used_in: step-1 }
+  - { symbol: "Transactions#with_transaction_returning_status", file: activerecord/lib/active_record/transactions.rb, used_in: step-2 }
+  - { symbol: "DatabaseStatements#transaction", file: activerecord/lib/active_record/connection_adapters/abstract/database_statements.rb, used_in: step-3 }
+  - { symbol: "TransactionManager#within_new_transaction", file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb, used_in: step-4 }
+  - { symbol: "TransactionManager#begin_transaction", file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb, used_in: step-5 }
+  - { symbol: "Validations#save", file: activerecord/lib/active_record/validations.rb, used_in: step-6 }
+  - { symbol: "TransactionManager#commit_transaction", file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb, used_in: step-7 }
+  - { symbol: "RealTransaction#commit", file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb, used_in: step-8 }
+  - { symbol: "Transaction#commit_records", file: activerecord/lib/active_record/connection_adapters/abstract/transaction.rb, used_in: step-9 }
+  - { symbol: "Transactions#committed!", file: activerecord/lib/active_record/transactions.rb, used_in: step-10 }

@@ -18,7 +18,7 @@ const StepSchema = z.object({
 });
 
 const GuidedTraceSchema = z.object({
-  example: z.object({ request: z.string(), target: z.string() }),
+  example: z.object({ label: z.string().default("The request we follow"), request: z.string(), target: z.string() }),
   steps: z.array(StepSchema).min(1),
   tracked_symbols: z.array(z.object({ symbol: z.string(), file: z.string(), used_in: z.string() })).default([]),
 });
@@ -37,7 +37,7 @@ export interface TraceStep {
 }
 
 export interface GuidedTraceBody {
-  example: { request: string; target: string };
+  example: { label: string; request: string; target: string };
   steps: TraceStep[];
 }
 
