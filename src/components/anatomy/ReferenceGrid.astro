@@ -1,0 +1,83 @@
+---
+// A reference-grid section: a card per constant (value, name, an example of
+// what gets it), then the excerpt the constants are quoted from.
+import CodePanel from "../CodePanel.tsx";
+import type { AnatomySection } from "../../lib/anatomy.ts";
+
+interface Props {
+  section: Extract<AnatomySection, { kind: "reference-grid" }>;
+}
+
+const { section } = Astro.props;
+const titleId = `${section.id}-title`;
+const fileName = section.source.file.split("/").pop();
+---
+
+<section id={section.id} class="an-section grid-12" aria-labelledby={titleId}>
+  <div class="an-text">
+    <h2 id={titleId}>{section.title}</h2>
+    {section.body && <p>{section.body}</p>}
+  </div>
+
+  <div class="an-figure">
+    <div class="file mono">{fileName}</div>
+    <ul class="cards">
+      {
+        section.rows.map((row) => (
+          <li class="card">
+            <span class="value">{row.value}</span>
+            <span class="name mono">{row.name}</span>
+            <span class="example">{row.example}</span>
+          </li>
+        ))
+      }
+    </ul>
+    <CodePanel source={section.source} />
+  </div>
+</section>
+
+<style>
+  .file {
+    margin-bottom: -12px;
+    font-size: 13px;
+    color: var(--color-textMuted);
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .card {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px;
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-lg);
+    background: var(--color-card);
+  }
+  .value {
+    font-family: var(--font-display);
+    font-size: 36px;
+    line-height: 1;
+    color: var(--accent);
+  }
+  .name {
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .example {
+    font-size: 13px;
+    color: var(--color-textMuted);
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 600px) {
+    .cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>

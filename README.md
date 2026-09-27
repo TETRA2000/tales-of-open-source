@@ -2,9 +2,9 @@
 
 Interactive e-book explaining how open-source applications (Ruby on Rails, React, Node.js, …) work inside — one set per application, chapters per feature, each chapter told in several formats for different reader levels, pinned to real commits and kept in step with upstream.
 
-Status: Library home, two sets and their Guided Traces are built (Astro + Preact islands):
+Status: Library home, two sets, their Guided Traces and an Anatomy are built (Astro + Preact islands):
 Ruby on Rails (`rails/rails` @ v8.1.4, chapters 02, 04, 05, 07, 10, 11, 12) and
-React (`facebook/react` @ v19.3.0, chapters 03, 05, 06, 07, 08, 10, 11).
+React (`facebook/react` @ v19.3.0, chapters 03, 04, 05, 06, 07, 08, 10, 11).
 
 ## Running it
 
@@ -32,4 +32,4 @@ pnpm check        # type check
 - `docs/content-model.md` — Library → Set → Part → Chapter → Article schema
 - `docs/sync-and-drift.md` — how articles stay current with upstream code
 - `design/` — tokens and the prototype artboards
-- `content/` — the Rails and React set outlines and their Guided Traces
+- `content/` — the Rails and React set outlines, their Guided Traces and an Anatomy

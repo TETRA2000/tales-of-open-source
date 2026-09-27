@@ -1,0 +1,86 @@
+---
+// The struct as a card: its name, then one row per field group with the
+// group's key on the left and its fields in mono.
+import type { AnatomyBody } from "../../lib/anatomy.ts";
+
+interface Props {
+  struct: AnatomyBody["struct"];
+}
+
+const { struct } = Astro.props;
+---
+
+<div class="struct-card">
+  <h2 id="struct-name" class="struct-name mono">{struct.name}</h2>
+  <dl>
+    {
+      struct.groups.map((group) => (
+        <div class="struct-row">
+          <dt class="struct-key mono">
+            <abbr title={group.name}>{group.key}</abbr>
+          </dt>
+          <dd>
+            <ul class="struct-fields mono" aria-label={`${group.name} fields`}>
+              {group.fields.map((field) => (
+                <li>{field}</li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+      ))
+    }
+  </dl>
+</div>
+
+<style>
+  .struct-card {
+    align-self: start;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border: 2px solid var(--color-text);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .struct-name {
+    margin: 0;
+    padding: 14px 18px;
+    background: var(--color-invertedBg);
+    color: var(--color-invertedText);
+    font-size: 15px;
+    font-weight: 500;
+  }
+  dl,
+  dd {
+    margin: 0;
+  }
+  .struct-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    border-top: 1px solid var(--color-rule);
+  }
+  .struct-key {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--an-tint);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  abbr {
+    text-decoration: none;
+  }
+  .struct-fields {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 0;
+    padding: 12px 16px;
+    list-style: none;
+    font-size: 14px;
+  }
+  .struct-fields li {
+    overflow-wrap: anywhere;
+  }
+</style>

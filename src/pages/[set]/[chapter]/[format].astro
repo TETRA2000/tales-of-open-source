@@ -1,8 +1,9 @@
 ---
 // One article: the chapter told in one format. Shared chrome here; the body is
-// rendered by the format's renderer (only Guided Trace so far).
+// rendered by the format's renderer (Guided Trace and Anatomy so far).
 import Base from "../../../layouts/Base.astro";
 import FormatSwitcher from "../../../components/FormatSwitcher.astro";
+import Anatomy from "../../../components/anatomy/Anatomy.astro";
 import GuidedTrace from "../../../components/GuidedTrace.tsx";
 import MetaChips from "../../../components/MetaChips.astro";
 import TopBar from "../../../components/TopBar.astro";
@@ -45,6 +46,7 @@ const setTitle = `${set.title}, ${set.subtitle}`;
       <div class="head-main">
         <div class="eyebrow"><span class="eyebrow-swatch" aria-hidden="true"></span>{article.format.name} · {set.title}</div>
         <h1>{article.title}</h1>
+        {article.body.format === "AN" && <p class="deck">{article.body.data.deck}</p>}
         <MetaChips article={article} repo={set.repo} />
       </div>
       {
@@ -59,6 +61,7 @@ const setTitle = `${set.title}, ${set.subtitle}`;
     </section>
 
     {article.body.format === "GT" && <GuidedTrace client:load steps={article.body.data.steps} />}
+    {article.body.format === "AN" && <Anatomy body={article.body.data} />}
   </main>
 </Base>
 
@@ -83,6 +86,14 @@ const setTitle = `${set.title}, ${set.subtitle}`;
     font-weight: 500;
     letter-spacing: -0.01em;
     overflow-wrap: break-word;
+  }
+  .deck {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(18px, 1.9vw, 22px);
+    line-height: 1.5;
+    color: var(--color-textSecondary);
+    text-wrap: pretty;
   }
   .example {
     grid-column: 9 / span 4;

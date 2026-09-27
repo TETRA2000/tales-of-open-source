@@ -1,0 +1,220 @@
+---
+// A pointer-tree section: title and body, then the JSX example and the fiber
+// tree it becomes, drawn as boxes joined by child / sibling / return edges.
+// The same edges are listed as text for screen readers.
+import CodePanel from "../CodePanel.tsx";
+import type { AnatomySection } from "../../lib/anatomy.ts";
+import { describeEdge, layoutPointerTree, NODE_H, NODE_W, type LaidOutNode, type TreeEdge } from "../../lib/anatomy-layout.ts";
+
+interface Props {
+  section: Extract<AnatomySection, { kind: "pointer-tree" }>;
+}
+
+const { section } = Astro.props;
+const layout = layoutPointerTree(section.tree);
+const byId = new Map(layout.nodes.map((n) => [n.id, n]));
+const titleId = `${section.id}-title`;
+const diagramTitleId = `${section.id}-diagram-title`;
+const arrowId = `${section.id}-arrow`;
+const returnArrowId = `${section.id}-arrow-return`;
+
+// A child edge and the return edge back up join the same two boxes, so each is
+// shifted this far to its own side of the line between their centres.
+const OFFSET = 4;
+
+// Where a ray from `p` along `d` crosses the border of the box centred on
+// `box`: the exit when `p` is inside it (`leaving`), the entry otherwise.
+function crossing(p: { x: number; y: number }, d: { x: number; y: number }, box: LaidOutNode, leaving: boolean): number {
+  const ts: number[] = [];
+  for (const [axis, half] of [["x", NODE_W / 2], ["y", NODE_H / 2]] as const) {
+    if (d[axis] === 0) continue;
+    const near = (box[axis] - Math.sign(d[axis]) * half - p[axis]) / d[axis];
+    const far = (box[axis] + Math.sign(d[axis]) * half - p[axis]) / d[axis];
+    ts.push(leaving ? far : near);
+  }
+  return leaving ? Math.min(...ts) : Math.max(...ts);
+}
+
+function edgeLine(edge: TreeEdge) {
+  const from = byId.get(edge.from)!;
+  const to = byId.get(edge.to)!;
+  const d = { x: to.x - from.x, y: to.y - from.y };
+  const len = Math.hypot(d.x, d.y);
+  // Rotating each edge's own direction a quarter turn gives normals that point
+  // opposite ways for a child edge and its return edge, so shifting both along
+  // their own normal puts them on opposite sides. Siblings stay centred.
+  const shift = edge.kind === "sibling" ? 0 : OFFSET;
+  const p = { x: from.x + (-d.y / len) * shift, y: from.y + (d.x / len) * shift };
+  const t0 = crossing(p, d, from, true);
+  const t1 = crossing(p, d, to, false);
+  const at = (t: number) => ({ x: +(p.x + d.x * t).toFixed(1), y: +(p.y + d.y * t).toFixed(1) });
+  const [a, b] = [at(t0), at(t1)];
+  return { ...edge, x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+}
+
+const lines = layout.edges.map(edgeLine);
+const edgeTexts = layout.edges.map((edge) => describeEdge(layout, edge));
+---
+
+<section id={section.id} class="an-section grid-12" aria-labelledby={titleId}>
+  <div class="an-text">
+    <h2 id={titleId}>{section.title}</h2>
+    {section.body && <p>{section.body}</p>}
+  </div>
+
+  <figure class="an-figure">
+    <div class="tree-pair">
+      <div class="example">
+        <div class="an-label">Example</div>
+        <pre class="mono" tabindex="0" aria-label="Example JSX">{section.jsx.replace(/\n+$/, "")}</pre>
+      </div>
+
+      <svg
+        class="tree"
+        viewBox={`0 0 ${layout.width} ${layout.height}`}
+        style={`max-width: ${Math.round(layout.width * 1.5)}px`}
+        role="img"
+        aria-labelledby={diagramTitleId}
+      >
+        <title id={diagramTitleId}>{section.title} — diagram</title>
+        <defs>
+          <marker id={arrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path class="arrow" d="M0 0L10 5L0 10z"></path>
+          </marker>
+          <marker id={returnArrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path class="arrow-return" d="M0 0L10 5L0 10z"></path>
+          </marker>
+        </defs>
+        {
+          lines.map((line) => (
+            <line
+              class={`edge edge-${line.kind}`}
+              x1={line.x1}
+              y1={line.y1}
+              x2={line.x2}
+              y2={line.y2}
+              marker-end={`url(#${line.kind === "return" ? returnArrowId : arrowId})`}
+            />
+          ))
+        }
+        {
+          layout.nodes.map((node) => (
+            <g class:list={["node", { root: node.id === "0" }]}>
+              <rect x={node.x - NODE_W / 2} y={node.y - NODE_H / 2} width={NODE_W} height={NODE_H} rx="4" />
+              <text x={node.x} y={node.y} text-anchor="middle" dominant-baseline="central">
+                {node.name}
+              </text>
+            </g>
+          ))
+        }
+      </svg>
+    </div>
+
+    <ul class="visually-hidden" aria-label="Edges in this diagram">
+      {edgeTexts.map((text) => <li>{text}</li>)}
+    </ul>
+
+    <figcaption>
+      <ul class="tree-legend">
+        <li><span class="swatch swatch-down" aria-hidden="true"></span>child / sibling — the way down and across</li>
+        <li><span class="swatch swatch-return" aria-hidden="true"></span>return — the way back up</li>
+      </ul>
+    </figcaption>
+
+    {section.source && <CodePanel source={section.source} />}
+  </figure>
+</section>
+
+<style>
+  .tree-pair {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 24px;
+  }
+  .example {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  pre {
+    margin: 0;
+    padding: 16px 18px;
+    background: var(--color-invertedBg);
+    color: var(--color-invertedText);
+    border-radius: var(--radius-lg);
+    font-size: 14px;
+    line-height: 1.7;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .tree {
+    flex: 1 1 300px;
+    min-width: 0;
+    width: 100%;
+    height: auto;
+  }
+  .edge {
+    stroke-width: 1.5;
+  }
+  .edge-child,
+  .edge-sibling {
+    stroke: var(--accent);
+  }
+  .edge-return {
+    stroke: var(--color-textMuted);
+    stroke-dasharray: 4 3;
+  }
+  .arrow {
+    fill: var(--accent);
+  }
+  .arrow-return {
+    fill: var(--color-textMuted);
+  }
+  .node rect {
+    fill: var(--color-card);
+    stroke: var(--color-text);
+    stroke-width: 1.2;
+  }
+  .node text {
+    fill: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  .node.root rect {
+    fill: var(--color-invertedBg);
+    stroke: var(--color-invertedBg);
+  }
+  .node.root text {
+    fill: var(--color-invertedText);
+  }
+  .tree-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+    color: var(--color-textSecondary);
+  }
+  .tree-legend li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .swatch {
+    flex-shrink: 0;
+    width: 28px;
+  }
+  .swatch-down {
+    height: 2px;
+    background: var(--accent);
+  }
+  .swatch-return {
+    border-top: 2px dashed var(--color-textMuted);
+  }
+</style>
