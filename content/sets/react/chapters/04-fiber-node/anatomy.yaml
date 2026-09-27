@@ -1,0 +1,194 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "// ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: AN
+title: Anatomy of a Fiber
+level: practitioner
+minutes: 10
+pin: "1d34f91dfde6bba84d08b683aaba164c7194dacb"
+deck: >-
+  Every component and host element React renders gets a fiber: a plain JavaScript object, with no methods,
+  that React keeps between renders. Here are the fields its constructor sets in every build, grouped by the
+  job they do.
+struct:
+  name: FiberNode
+  source:
+    file: packages/react-reconciler/src/ReactFiber.js
+    lines: 134-207
+    code: |
+      function FiberNode(
+        this: $FlowFixMe,
+        tag: WorkTag,
+        pendingProps: mixed,
+        key: ReactKey,
+        mode: TypeOfMode,
+      ) {
+        // Instance
+        this.tag = tag;
+        this.key = key;
+        this.elementType = null;
+        this.type = null;
+        this.stateNode = null;
+
+        // Fiber
+        this.return = null;
+        this.child = null;
+        this.sibling = null;
+        this.index = 0;
+
+        this.ref = null;
+        this.refCleanup = null;
+
+        this.pendingProps = pendingProps;
+        this.memoizedProps = null;
+        this.updateQueue = null;
+        this.memoizedState = null;
+        this.dependencies = null;
+
+        this.mode = mode;
+
+        // Effects
+        this.flags = NoFlags;
+        this.subtreeFlags = NoFlags;
+        this.deletions = null;
+
+        this.lanes = NoLanes;
+        this.childLanes = NoLanes;
+
+        this.alternate = null;
+        // ... enableProfilerTimer timing fields and __DEV__ debug fields
+      }
+  groups:
+    - key: ID
+      name: Identity
+      fields: [tag, key, elementType, type, stateNode]
+      what: >-
+        What this fiber is: a work tag (function component, host element, text…), the key from JSX, and the
+        component function or tag name (elementType as written, type as resolved). stateNode holds the DOM
+        node or class instance behind it, if there is one.
+    - key: TR
+      name: Tree links
+      fields: [return, child, sibling, index]
+      what: >-
+        Pointers to the parent (return), the first child and the next sibling. index is the fiber's position
+        among its siblings, used when diffing lists.
+    - key: IN
+      name: Inputs and state
+      fields: [pendingProps, memoizedProps, updateQueue, memoizedState, dependencies]
+      what: >-
+        Props coming in (pendingProps) versus props last rendered with (memoizedProps). updateQueue holds
+        queued updates, or a function component's effect list. For function components, memoizedState is the
+        head of the hooks list; dependencies lists the contexts this fiber read.
+    - key: EF
+      name: Effects
+      fields: [flags, subtreeFlags, deletions]
+      what: >-
+        Bit flags saying what the commit phase must do on this fiber (Placement, Update…). subtreeFlags merges
+        the flags of everything below it, so the commit can skip subtrees with nothing to do, and deletions
+        lists the child fibers to remove.
+    - key: LN
+      name: Scheduling
+      fields: [lanes, childLanes]
+      what: >-
+        Bitmasks of pending update priorities: lanes for this fiber, childLanes for everything below it. When
+        childLanes shares no lane with the render in progress, React skips the whole subtree.
+    - key: MD
+      name: Mode and refs
+      fields: [mode, ref, refCleanup]
+      what: >-
+        Mode bits (concurrent, strict, profiling), inherited from the parent when the fiber is created. ref is
+        the ref the commit phase attaches to this fiber's instance; refCleanup keeps the function a callback
+        ref returned.
+    - key: AL
+      name: Double buffering
+      fields: [alternate]
+      what: >-
+        The same component's fiber in the other tree. React renders into one while the other is on screen.
+        It stays null until createWorkInProgress first makes the twin.
+sections:
+  - id: tree-links
+    kind: pointer-tree
+    title: Three pointers make a tree
+    body: >-
+      A fiber points only to its first child; the other children hang off that child's sibling pointer, one
+      after another, and every fiber points back to its parent through return. The work loop walks this shape
+      without recursion: beginWork hands back a fiber's child as the next unit of work, and when there is
+      none, completeUnitOfWork moves on to the sibling or climbs through return. Because each step is one
+      fiber, the concurrent loop can stop between any two fibers to yield, and later pick up where it left off.
+    jsx: |
+      <App>
+        <Header />
+        <List>
+          <Item />
+          <Item />
+        </List>
+      </App>
+    tree:
+      name: App
+      children:
+        - name: Header
+        - name: List
+          children: [{ name: Item }, { name: Item }]
+  - id: double-buffering
+    kind: twin-trees
+    title: Two trees, one screen
+    body: >-
+      React keeps the tree on screen (current) and builds the next one beside it (workInProgress). Each
+      fiber's alternate points at its twin: createWorkInProgress creates the twin the first time it is needed,
+      wires alternate both ways, and reuses the twin on later renders. After the commit's mutation phase,
+      flushMutationEffects in ReactFiberWorkLoop.js runs root.current = finishedWork, and the tree that was
+      being built becomes current.
+    nodes: [App, List, Item]
+    source:
+      file: packages/react-reconciler/src/ReactFiber.js
+      lines: 323-351
+      code: |
+        export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
+          let workInProgress = current.alternate;
+          if (workInProgress === null) {
+            // We use a double buffering pooling technique because we know that we'll
+            // only ever need at most two versions of a tree. We pool the "other" unused
+            // node that we're free to reuse. This is lazily created to avoid allocating
+            // extra objects for things that are never updated. It also allow us to
+            // reclaim the extra memory if needed.
+            workInProgress = createFiber(
+              current.tag,
+              pendingProps,
+              current.key,
+              current.mode,
+            );
+            workInProgress.elementType = current.elementType;
+            workInProgress.type = current.type;
+            workInProgress.stateNode = current.stateNode;
+
+            // ... __DEV__ debug fields
+            workInProgress.alternate = current;
+            current.alternate = workInProgress;
+  - id: work-tags
+    kind: reference-grid
+    title: Tags you will meet first
+    body: >-
+      A fiber's tag is one of the constants in ReactWorkTags.js, and beginWork and completeWork both switch
+      on it to decide what to do with the fiber. A string that is the only child of a host element, as in
+      <p>hello</p>, gets no HostText fiber in react-dom: the element's text content is set directly.
+    source:
+      file: packages/react-reconciler/src/ReactWorkTags.js
+      lines: 44-50
+      code: |
+        export const FunctionComponent = 0;
+        export const ClassComponent = 1;
+        export const HostRoot = 3; // Root of a host tree. Could be nested inside another node.
+        export const HostPortal = 4; // A subtree. Could be an entry point to a different renderer.
+        export const HostComponent = 5;
+        export const HostText = 6;
+        export const Fragment = 7;
+    rows:
+      - { name: FunctionComponent, value: "0", example: "function App()" }
+      - { name: ClassComponent, value: "1", example: "class App extends …" }
+      - { name: HostRoot, value: "3", example: "createRoot(el)" }
+      - { name: HostComponent, value: "5", example: "<div>" }
+      - { name: HostText, value: "6", example: "\"hello\"" }
+      - { name: Fragment, value: "7", example: "<>…</>" }
+tracked_symbols:
+  - { symbol: FiberNode, file: packages/react-reconciler/src/ReactFiber.js, used_in: struct }
+  - { symbol: createWorkInProgress, file: packages/react-reconciler/src/ReactFiber.js, used_in: double-buffering }
+  - { symbol: WorkTag, file: packages/react-reconciler/src/ReactWorkTags.js, used_in: work-tags }

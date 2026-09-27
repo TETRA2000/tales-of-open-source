@@ -16,6 +16,14 @@ try {
           for (const step of article.body.data.steps) {
             console.log(`    ok  ${step.id}  ${step.file}:${step.lines.start}-${step.lines.end}`);
           }
+        } else if (article.body.format === "AN") {
+          const { struct, sections } = article.body.data;
+          console.log(`    ok  struct  ${struct.source.file}:${struct.source.lines.start}-${struct.source.lines.end}`);
+          for (const section of sections) {
+            if (section.source) {
+              console.log(`    ok  ${section.id}  ${section.source.file}:${section.source.lines.start}-${section.source.lines.end}`);
+            }
+          }
         }
       }
     }
