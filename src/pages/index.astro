@@ -1,7 +1,332 @@
 ---
+// Library home — design/canvas/Main.dc.html
 import Base from "../layouts/Base.astro";
+import SectionNav from "../components/SectionNav.astro";
+import TopBar from "../components/TopBar.astro";
+import { shortSha } from "../lib/content.ts";
+import { getLibrary } from "../lib/library.ts";
+
+const { sets } = getLibrary();
+
+const levels = [
+  { tier: "LIBRARY", name: "Tales of Open Source", what: "The shelf. Holds every set and the shared article formats." },
+  { tier: "SET", name: "One application", what: "A single repository, pinned to a commit, with its own reading paths and sync status." },
+  { tier: "PART → CHAPTER", name: "One feature", what: "A subsystem or feature of that application — the request lifecycle, the fiber tree, the module loader." },
+  { tier: "ARTICLE", name: "One format", what: "The chapter told as a Quick Tale, Guided Trace, Source Reading, Anatomy, Field Guide or Revision Note." },
+];
 ---
 
-<Base title="Tales of Open Source">
-  <main class="page"><h1>Tales of Open Source</h1></main>
+<Base title="Tales of Open Source — Library" description="Interactive e-books that explain how open-source applications work inside.">
+  <TopBar>
+    <SectionNav
+      label="Sections"
+      links={[
+        { label: "Sets", href: "#shelf" },
+        { label: "Structure", href: "#structure" },
+      ]}
+    />
+  </TopBar>
+
+  <main class="page">
+    <section class="hero grid-12">
+      <div class="hero-main">
+        <div class="eyebrow">The library</div>
+        <h1>One set per application.<br /><span class="accent">Read it all the way down.</span></h1>
+        <p class="lede">
+          Each set takes a single open-source application and explains how it works inside — its logic flows, data
+          structures and file layout — chapter by chapter, pinned to a real commit and kept in step with upstream.
+        </p>
+      </div>
+      <aside class="hero-aside">
+        <div class="aside-title">New to the library?</div>
+        <div>Pick a set, then follow its Newcomer path — every chapter starts with a Quick Tale.</div>
+      </aside>
+    </section>
+
+    <section id="shelf" class="shelf" aria-label="Sets">
+      {
+        sets.map((set, i) => (
+          <a class="set" href={set.href} style={`--cover: ${set.accent}`}>
+            <div class="cover">
+              <div class="cover-top mono">
+                <span>SET {String(i + 1).padStart(2, "0")}</span>
+                <span>{set.repo}</span>
+              </div>
+              <div class="cover-title">
+                <div class="cover-name">{set.title}</div>
+                <div class="cover-subtitle">{set.subtitle}</div>
+              </div>
+              <div class="cover-parts">{set.parts.map((p) => p.title).join(" · ")}</div>
+            </div>
+            <div class="set-meta">
+              <div class="set-blurb">{set.blurb}</div>
+              <div class="set-facts">
+                <span>{set.chapters.length} chapters</span>
+                <span aria-hidden="true">·</span>
+                <span class="mono" title={set.pin.commit}>@ {shortSha(set.pin.commit)}</span>
+              </div>
+            </div>
+          </a>
+        ))
+      }
+      <div class="set">
+        <div class="next-set">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <div class="next-title">Next set</div>
+          <div class="next-body">Point at a repository, choose a commit, outline the parts. Chapters can be added one at a time.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="structure" class="structure grid-12">
+      <div class="structure-intro">
+        <h2>How a set is built</h2>
+        <p>Sets grow independently. Adding a chapter, or a new format of an existing chapter, never touches the rest.</p>
+      </div>
+      <dl class="levels">
+        {
+          levels.map((l) => (
+            <div class="level">
+              <dt>
+                <span class="tier mono">{l.tier}</span>
+                <span class="level-name">{l.name}</span>
+              </dt>
+              <dd>{l.what}</dd>
+            </div>
+          ))
+        }
+      </dl>
+    </section>
+  </main>
 </Base>
+
+<style>
+  main {
+    font-family: var(--font-display);
+    padding-bottom: 96px;
+  }
+
+  .hero {
+    padding: 88px var(--gutter) 56px;
+    align-items: end;
+    row-gap: 32px;
+  }
+  .hero-main {
+    grid-column: span 8;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .hero .eyebrow {
+    letter-spacing: 0.12em;
+  }
+  h1 {
+    margin: 0;
+    font-size: clamp(44px, 6.6vw, 84px);
+    line-height: 0.98;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  .accent {
+    font-weight: 400;
+    color: var(--accent);
+  }
+  .lede {
+    margin: 0;
+    max-width: 700px;
+    font-size: 22px;
+    line-height: 1.5;
+    color: var(--color-textSecondary);
+    text-wrap: pretty;
+  }
+  .hero-aside {
+    grid-column: 10 / span 3;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 2px solid var(--color-text);
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-textSecondary);
+  }
+  .aside-title {
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .shelf {
+    padding: 0 var(--gutter);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 24px;
+  }
+  .set {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    text-decoration: none;
+    color: var(--color-text);
+  }
+  a.set:hover .cover {
+    outline: 2px solid var(--color-text);
+    outline-offset: 3px;
+  }
+  .cover {
+    height: 400px;
+    padding: 28px;
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: var(--color-onAccent);
+    background: var(--cover);
+    box-shadow: inset 10px 0 0 rgba(0, 0, 0, 0.18);
+  }
+  .cover-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    opacity: 0.85;
+  }
+  .cover-title {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .cover-name {
+    font-size: 40px;
+    line-height: 1.02;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .cover-subtitle {
+    font-size: 20px;
+    opacity: 0.9;
+  }
+  .cover-parts {
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.5;
+    opacity: 0.9;
+  }
+  .set-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-family: var(--font-body);
+  }
+  .set-blurb {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-textSecondary);
+  }
+  .set-facts {
+    display: flex;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--color-textMuted);
+  }
+  .next-set {
+    height: 400px;
+    border: 1.5px dashed var(--color-status-planned);
+    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    padding: 28px;
+    text-align: center;
+    color: var(--color-textMuted);
+  }
+  .next-title {
+    font-size: 24px;
+    color: var(--color-text);
+  }
+  .next-body {
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .structure {
+    margin: 80px var(--gutter) 0;
+    padding-top: 40px;
+    border-top: 1px solid var(--color-rule);
+    row-gap: 32px;
+  }
+  .structure-intro {
+    grid-column: span 4;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  h2 {
+    margin: 0;
+    font-size: 40px;
+    font-weight: 500;
+    line-height: 1.05;
+  }
+  .structure-intro p {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--color-textSecondary);
+  }
+  .levels {
+    grid-column: 6 / span 7;
+    margin: 0;
+    font-family: var(--font-body);
+  }
+  .level {
+    display: grid;
+    grid-template-columns: 336px minmax(0, 1fr);
+    gap: 16px;
+    align-items: baseline;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--color-rule);
+  }
+  dt {
+    display: grid;
+    grid-template-columns: 120px 200px;
+    gap: 16px;
+    align-items: baseline;
+  }
+  .tier {
+    font-size: 12px;
+    color: var(--color-textMuted);
+  }
+  .level-name {
+    font-size: 17px;
+    font-weight: 600;
+  }
+  dd {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-textSecondary);
+  }
+
+  @media (max-width: 900px) {
+    .hero {
+      padding-top: 56px;
+    }
+    .hero-main,
+    .hero-aside,
+    .structure-intro,
+    .levels {
+      grid-column: 1 / -1;
+    }
+    .level,
+    dt {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 4px;
+    }
+  }
+</style>
