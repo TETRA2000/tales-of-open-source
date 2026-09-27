@@ -73,7 +73,7 @@ test("set home shows the pin and links chapter 04 to its Guided Trace", async ({
   await expect(truth).toContainText("c3466ea");
   await expect(truth).toContainText("v8.1.4");
   await expect(truth).toContainText("2026-09-27");
-  await expect(truth).toContainText("Tracked symbols8");
+  await expect(truth).toContainText("Tracked symbols66");
   await page.getByRole("link", { name: /Request lifecycle/ }).click();
   await expect(page).toHaveURL(new RegExp(`${TRACE}$`));
 });
@@ -87,4 +87,40 @@ test.describe("phone width", () => {
       expect(overflow).toBe(0);
     });
   }
+});
+
+const TRACES = [
+  { chapter: "02-booting", label: "The boot we follow", steps: 9, package: "railties", title: "config/environment.rb starts the boot" },
+  { chapter: "05-routing", label: "The route we follow", steps: 9, package: "actionpack", title: "draw evaluates routes.rb on a Mapper" },
+  { chapter: "07-rendering", label: "The render we follow", steps: 10, package: "actionpack", title: "After the action, check whether anything was rendered" },
+  { chapter: "10-associations", label: "The call we follow", steps: 10, package: "activerecord", title: "has_many is a class method that builds a reflection" },
+  { chapter: "11-transactions", label: "The call we follow", steps: 10, package: "activerecord", title: "save is wrapped before it saves" },
+  { chapter: "12-active-job", label: "The job we follow", steps: 11, package: "activejob", title: "perform_later builds a job and enqueues it" },
+];
+
+for (const trace of TRACES) {
+  test(`${trace.chapter} Guided Trace renders step 1 under its own label`, async ({ page }) => {
+    await page.goto(`/rails/${trace.chapter}/guided-trace/`);
+    await expect(page.getByRole("complementary", { name: trace.label })).toBeVisible();
+    await expect(page.locator(".gt-counter")).toHaveText(`Step 1 of ${trace.steps} · ${trace.package}`);
+    await expect(page.getByRole("heading", { level: 2, name: trace.title })).toBeVisible();
+  });
+
+  test.describe("phone width", () => {
+    test.use({ viewport: { width: 390, height: 844 } });
+    test(`no step of ${trace.chapter} scrolls the page sideways`, async ({ page }) => {
+      await page.goto(`/rails/${trace.chapter}/guided-trace/`);
+      for (let i = 1; i <= trace.steps; i++) {
+        await expect(page.locator(".gt-counter")).toHaveText(new RegExp(`^Step ${i} of`));
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(overflow, `step ${i}`).toBe(0);
+        if (i < trace.steps) await page.getByRole("button", { name: "Next step" }).click();
+      }
+    });
+  });
+}
+
+test("the request lifecycle trace keeps the default label", async ({ page }) => {
+  await page.goto(TRACE);
+  await expect(page.getByRole("complementary", { name: "The request we follow" })).toBeVisible();
 });
