@@ -77,3 +77,14 @@ test("set home shows the pin and links chapter 04 to its Guided Trace", async ({
   await page.getByRole("link", { name: /Request lifecycle/ }).click();
   await expect(page).toHaveURL(new RegExp(`${TRACE}$`));
 });
+
+test.describe("phone width", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+  for (const path of ["/", "/rails/", `${TRACE}#step-8`]) {
+    test(`${path} has no horizontal page scroll`, async ({ page }) => {
+      await page.goto(path);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow).toBe(0);
+    });
+  }
+});
