@@ -31,4 +31,16 @@ describe.skipIf(!existsSync(localCloneDir("facebook/react")))("real React conten
       expect(chapter.articles.map((a) => a.format.code), chapter.id).toContain("GT");
     }
   });
+
+  it("04 · Anatomy of a Fiber loads against the pin", () => {
+    const { sets } = loadLibrary({ contentDir: join(import.meta.dirname, "../content") });
+    const chapter = sets.find((s) => s.id === "react")?.chapters.find((c) => c.id === "04-fiber-node");
+    const article = chapter?.articles.find((a) => a.format.code === "AN");
+    expect(article?.format.code).toBe("AN");
+    if (article?.body.format !== "AN") throw new Error("04-fiber-node has no Anatomy body");
+    const { struct, sections } = article.body.data;
+    expect(struct.groups.map((g) => g.key)).toEqual(["ID", "TR", "IN", "EF", "LN", "MD", "AL"]);
+    expect(sections.map((s) => s.kind)).toEqual(["pointer-tree", "twin-trees", "reference-grid"]);
+    expect(struct.source.url.endsWith("packages/react-reconciler/src/ReactFiber.js#L134-L207")).toBe(true);
+  });
 });

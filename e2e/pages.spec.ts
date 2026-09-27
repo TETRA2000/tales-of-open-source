@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const TRACE = "/rails/04-request-lifecycle/guided-trace/";
 const PIN = "c3466ea00d7121798e3aa3144ffdf7174b81d8cb";
+const ANATOMY = "/react/04-fiber-node/anatomy/";
 
 test.describe("Guided Trace", () => {
   test("starts on step 1 with the pinned GitHub link", async ({ page }) => {
@@ -19,8 +20,8 @@ test.describe("Guided Trace", () => {
     await page.goto(TRACE);
     await page.getByRole("button", { name: /Step 5: Journey finds the matching route/ }).click();
     await expect(page.locator(".gt-counter")).toHaveText("Step 5 of 8 · actionpack");
-    await expect(page.locator(".gt-code pre")).toContainText("recognize(req) do |route, parameters|");
-    await expect(page.locator(".gt-lines")).toHaveText("L30–41");
+    await expect(page.locator(".code-panel pre")).toContainText("recognize(req) do |route, parameters|");
+    await expect(page.locator(".code-panel-lines")).toHaveText("L30–41");
     await expect(page.getByRole("button", { name: /Step 5:/ })).toHaveAttribute("aria-current", "step");
     await expect(page).toHaveURL(/#step-5$/);
   });
@@ -43,7 +44,7 @@ test.describe("Guided Trace", () => {
   test("a #step hash deep-links to that step", async ({ page }) => {
     await page.goto(`${TRACE}#step-8`);
     await expect(page.locator(".gt-counter")).toHaveText("Step 8 of 8 · actionpack");
-    await expect(page.locator(".gt-code pre")).toContainText("could not be found for #{self.class.name}");
+    await expect(page.locator(".code-panel pre")).toContainText("could not be found for #{self.class.name}");
   });
 
   test("shared chrome: breadcrumb, format switcher, meta chips", async ({ page }) => {
@@ -56,6 +57,49 @@ test.describe("Guided Trace", () => {
     await expect(formats.first()).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("list", { name: "About this article" })).toContainText("rails/rails @ c3466ea");
     await expect(page.getByRole("list", { name: "About this article" })).toContainText("Up to date");
+  });
+});
+
+test.describe("Anatomy", () => {
+  test("struct card lists the seven groups", async ({ page }) => {
+    await page.goto(ANATOMY);
+    const card = page.locator(".struct-card");
+    for (const key of ["ID", "TR", "IN", "EF", "LN", "MD", "AL"]) {
+      await expect(card.getByText(key, { exact: true })).toBeVisible();
+    }
+    await expect(card.locator(".struct-row").filter({ has: page.getByText("ID", { exact: true }) })).toContainText("tag");
+  });
+
+  test("struct source links to the pin", async ({ page }) => {
+    await page.goto(ANATOMY);
+    const details = page.locator("details").filter({ has: page.getByText("Source at pin", { exact: true }) });
+    await details.getByText("Source at pin", { exact: true }).click();
+    await expect(details.getByRole("link", { name: "View on GitHub at pin" })).toBeVisible();
+    await expect(details.getByRole("link", { name: "View on GitHub at pin" })).toHaveAttribute(
+      "href",
+      "https://github.com/facebook/react/blob/1d34f91dfde6bba84d08b683aaba164c7194dacb/packages/react-reconciler/src/ReactFiber.js#L134-L207",
+    );
+  });
+
+  test("the pointer-tree diagram is described in text", async ({ page }) => {
+    await page.goto(ANATOMY);
+    await expect(page.getByRole("img", { name: /Three pointers make a tree/ })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Edges in this diagram" })).toContainText("List — child → Item");
+  });
+
+  test("format switcher marks Anatomy as current", async ({ page }) => {
+    await page.goto(ANATOMY);
+    await expect(
+      page.getByRole("navigation", { name: "Formats of this chapter" }).getByRole("link", { name: "Anatomy" }),
+    ).toHaveAttribute("aria-current", "page");
+  });
+
+  test("React set home shows 04 as up to date and links it", async ({ page }) => {
+    await page.goto("/react/");
+    const link = page.getByRole("link", { name: /Anatomy of a Fiber/ });
+    await expect(link).toContainText("Up to date");
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`${ANATOMY}$`));
   });
 });
 
@@ -92,7 +136,7 @@ test("React set home shows its pin and links chapter 07 to its Guided Trace", as
   await expect(truth).toContainText("1d34f91");
   await expect(truth).toContainText("v19.3.0");
   await expect(truth).toContainText("2026-09-27");
-  await expect(truth).toContainText("Tracked symbols71");
+  await expect(truth).toContainText("Tracked symbols79");
   await page.getByRole("link", { name: /What setState does/ }).click();
   await expect(page).toHaveURL(/\/react\/07-use-state\/guided-trace\/$/);
   await expect(page.getByRole("link", { name: "View on GitHub at pin" })).toHaveAttribute(
@@ -104,13 +148,22 @@ test("React set home shows its pin and links chapter 07 to its Guided Trace", as
 
 test.describe("phone width", () => {
   test.use({ viewport: { width: 390, height: 844 } });
-  for (const path of ["/", "/rails/", "/react/", `${TRACE}#step-8`]) {
+  for (const path of ["/", "/rails/", "/react/", `${TRACE}#step-8`, ANATOMY]) {
     test(`${path} has no horizontal page scroll`, async ({ page }) => {
       await page.goto(path);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow).toBe(0);
     });
   }
+});
+
+test.describe("phone width 375", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+  test(`${ANATOMY} has no horizontal page scroll`, async ({ page }) => {
+    await page.goto(ANATOMY);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBe(0);
+  });
 });
 
 const TRACES = [

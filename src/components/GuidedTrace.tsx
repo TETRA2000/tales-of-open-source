@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { TraceStep } from "../lib/guided-trace.ts";
-import { isElision } from "../lib/excerpt.ts";
+import CodePanel from "./CodePanel.tsx";
 import "./GuidedTrace.css";
 
 interface Props {
@@ -42,7 +42,6 @@ export default function GuidedTrace({ steps }: Props) {
 
   const step = steps[current];
   const total = steps.length;
-  const range = step.lines.start === step.lines.end ? `L${step.lines.start}` : `L${step.lines.start}–${step.lines.end}`;
 
   return (
     <div class="gt">
@@ -101,27 +100,7 @@ export default function GuidedTrace({ steps }: Props) {
           </h2>
           <p class="gt-prose">{step.body}</p>
 
-          <figure class="gt-code">
-            <figcaption class="gt-code-head">
-              <span class="gt-file">
-                {step.file}
-                <span class="gt-lines">{range}</span>
-              </span>
-              <a href={step.url} target="_blank" rel="noopener">
-                View on GitHub at pin
-              </a>
-            </figcaption>
-            <pre tabIndex={0} aria-label={`${step.file}, lines ${step.lines.start} to ${step.lines.end}`}>
-              <code>
-                {step.code.split("\n").map((line, i) => (
-                  <span key={i} class={isElision(line) ? "gt-elided" : undefined}>
-                    {line}
-                    {"\n"}
-                  </span>
-                ))}
-              </code>
-            </pre>
-          </figure>
+          <CodePanel source={step} />
 
           <div class="gt-handoff">
             <span class="gt-handoff-label">Hands off to</span>

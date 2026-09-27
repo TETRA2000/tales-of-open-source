@@ -1,0 +1,133 @@
+---
+// The body of an Anatomy (AN) article: the struct panel (card + legend), then
+// each typed section in order. Static; ships no JavaScript.
+//
+// The section layout contract lives here and is shared by every section
+// component: `.an-section` is a 12-column grid whose `.an-text` spans 4
+// columns and whose `.an-figure` spans columns 6 to 12.
+import type { AnatomyBody, AnatomySection } from "../../lib/anatomy.ts";
+import PointerTree from "./PointerTree.astro";
+import ReferenceGrid from "./ReferenceGrid.astro";
+import StructCard from "./StructCard.astro";
+import StructLegend from "./StructLegend.astro";
+import TwinTrees from "./TwinTrees.astro";
+
+interface Props {
+  body: AnatomyBody;
+}
+
+const { body } = Astro.props;
+
+const SECTIONS = {
+  "pointer-tree": PointerTree,
+  "twin-trees": TwinTrees,
+  "reference-grid": ReferenceGrid,
+} satisfies Record<AnatomySection["kind"], unknown>;
+
+// Each component takes `section` narrowed to its own kind. TypeScript can't
+// correlate the looked-up component with the narrowed section, so it is widened
+// here; the map is keyed by kind, so the pair always matches.
+type SectionComponent = (props: { section: AnatomySection }) => unknown;
+const componentFor = (section: AnatomySection) => SECTIONS[section.kind] as SectionComponent;
+---
+
+<div class="anatomy">
+  <section id="struct" class="struct grid-12" aria-labelledby="struct-name">
+    <StructCard struct={body.struct} />
+    <StructLegend struct={body.struct} />
+  </section>
+
+  {
+    body.sections.map((section) => {
+      const Section = componentFor(section);
+      return <Section section={section} />;
+    })
+  }
+</div>
+
+<style>
+  .anatomy {
+    /* Accent-tinted fill for key cells and the work-in-progress column. Mixed
+       into the darkest surface so accent text on it stays above 4.5:1. */
+    --an-tint: color-mix(in srgb, var(--accent) 16%, var(--color-codeBg));
+    padding: 8px var(--gutter) 96px;
+  }
+
+  .struct {
+    padding: 48px;
+    column-gap: 32px;
+    row-gap: 32px;
+    background: var(--color-card);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius-xl);
+  }
+  .struct > :global(.struct-card) {
+    grid-column: span 5;
+  }
+  .struct > :global(.struct-legend) {
+    grid-column: 6 / span 7;
+  }
+
+  .anatomy :global(.an-section) {
+    margin-top: 72px;
+    padding-top: 40px;
+    border-top: 1px solid var(--color-rule);
+    row-gap: 32px;
+  }
+  /* The first section follows the struct panel, which is its own divider. */
+  .struct + :global(.an-section) {
+    border-top: none;
+    padding-top: 0;
+  }
+  .anatomy :global(.an-text) {
+    grid-column: span 4;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .anatomy :global(.an-text h2) {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(28px, 3vw, 36px);
+    font-weight: 500;
+    line-height: 1.1;
+  }
+  .anatomy :global(.an-text p) {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--color-textSecondary);
+  }
+  .anatomy :global(.an-figure) {
+    grid-column: 6 / span 7;
+    min-width: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .anatomy :global(.an-label) {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--color-textMuted);
+  }
+
+  @media (max-width: 900px) {
+    .struct {
+      padding: 20px;
+    }
+    .anatomy :global(.an-section) {
+      margin-top: 56px;
+    }
+    .anatomy :global(.an-text),
+    .anatomy :global(.an-figure),
+    .struct > :global(.struct-card),
+    .struct > :global(.struct-legend) {
+      grid-column: 1 / -1;
+    }
+  }
+</style>

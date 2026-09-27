@@ -15,6 +15,7 @@ import { z } from "zod";
 import { FORMATS, type FormatInfo, type Level } from "./formats.ts";
 import { openRepo as defaultOpenRepo, type RepoReader } from "./git.ts";
 import { parseGuidedTrace, type GuidedTraceBody } from "./guided-trace.ts";
+import { parseAnatomy, type AnatomyBody } from "./anatomy.ts";
 
 const Sha = z.string().regex(/^[0-9a-f]{40}$/, "must be a full 40-character commit SHA (placeholders like [SHA] are not allowed)");
 const LevelSchema = z.enum(["newcomer", "practitioner", "contributor", "all"]);
@@ -66,12 +67,13 @@ export interface ArticleContext {
   reader: RepoReader;
 }
 
-export type ArticleBody = { format: "GT"; data: GuidedTraceBody };
+export type ArticleBody = { format: "GT"; data: GuidedTraceBody } | { format: "AN"; data: AnatomyBody };
 
 type Parser = (raw: unknown, ctx: ArticleContext) => ArticleBody;
 
 const PARSERS: Record<string, Parser> = {
   GT: (raw, ctx) => ({ format: "GT", data: parseGuidedTrace(raw, ctx) }),
+  AN: (raw, ctx) => ({ format: "AN", data: parseAnatomy(raw, ctx) }),
 };
 
 export interface Article {

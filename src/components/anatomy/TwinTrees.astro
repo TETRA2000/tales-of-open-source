@@ -1,0 +1,115 @@
+---
+// A twin-trees section: the tree on screen and the tree being built, side by
+// side, one row per fiber, each work-in-progress fiber pointing back at its
+// twin through alternate.
+import CodePanel from "../CodePanel.tsx";
+import type { AnatomySection } from "../../lib/anatomy.ts";
+
+interface Props {
+  section: Extract<AnatomySection, { kind: "twin-trees" }>;
+}
+
+const { section } = Astro.props;
+const titleId = `${section.id}-title`;
+---
+
+<section id={section.id} class="an-section grid-12" aria-labelledby={titleId}>
+  <div class="an-text">
+    <h2 id={titleId}>{section.title}</h2>
+    {section.body && <p>{section.body}</p>}
+  </div>
+
+  <div class="an-figure">
+    <div class="twins">
+      <div class="twin current">
+        <h3 class="twin-head" id={`${section.id}-current`}>current · on screen</h3>
+        <ul aria-labelledby={`${section.id}-current`}>
+          {section.nodes.map((node) => <li class="mono">{node}</li>)}
+        </ul>
+      </div>
+      <div class="twin wip">
+        <h3 class="twin-head" id={`${section.id}-wip`}>workInProgress · being built</h3>
+        <ul aria-labelledby={`${section.id}-wip`}>
+          {
+            section.nodes.map((node) => (
+              <li class="mono">
+                <span>{node}</span>
+                <span class="alt"><span aria-hidden="true">⇄ </span>alternate</span>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </div>
+
+    {section.source && <CodePanel source={section.source} />}
+  </div>
+</section>
+
+<style>
+  .twins {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--color-text);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .twin {
+    min-width: 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .current {
+    border-right: 1px dashed var(--accent);
+  }
+  .wip {
+    background: var(--an-tint);
+  }
+  .twin-head {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: var(--color-textMuted);
+  }
+  .wip .twin-head {
+    color: var(--accent);
+  }
+  ul {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 4px 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-text);
+    border-radius: var(--radius-md);
+    background: var(--color-card);
+    font-size: 14px;
+  }
+  .wip li {
+    border-color: var(--accent);
+  }
+  .alt {
+    color: var(--accent);
+  }
+  @media (max-width: 600px) {
+    .twins {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .current {
+      border-right: none;
+      border-bottom: 1px dashed var(--accent);
+    }
+  }
+</style>

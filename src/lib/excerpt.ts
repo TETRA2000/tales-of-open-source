@@ -11,6 +11,14 @@ export interface LineRange {
   end: number;
 }
 
+// What CodePanel needs to render one excerpt: where it's from and its text.
+export interface CodeSource {
+  file: string;
+  lines: LineRange;
+  url: string;
+  code: string;
+}
+
 export type ExcerptCheck =
   | { ok: true }
   | { ok: false; reason: string };
