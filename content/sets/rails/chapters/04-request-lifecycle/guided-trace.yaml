@@ -28,7 +28,7 @@ steps:
       Rails.application.load_server
     next: Rails.application.call(env)
   - id: step-2
-    title: The application object answers #call
+    title: "The application object answers #call"
     symbol: Rails::Engine#call
     package: railties
     file: railties/lib/rails/engine.rb
