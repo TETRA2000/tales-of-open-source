@@ -1,0 +1,316 @@
+# Every `code` excerpt is the file's `lines` range at `pin`, dedented; "# ..." marks trimmed lines.
+# The loader checks this on every build (pnpm verify runs the same check on its own).
+format: GT
+title: "perform_later to perform: a job's round trip"
+level: practitioner
+minutes: 15
+pin: "c3466ea00d7121798e3aa3144ffdf7174b81d8cb"
+example:
+  label: The job we follow
+  request: WelcomeEmailJob.perform_later(user)
+  target: "WelcomeEmailJob#perform(user), on the async adapter"
+steps:
+  - id: step-1
+    title: perform_later builds a job and enqueues it
+    symbol: Enqueuing::ClassMethods#perform_later
+    package: activejob
+    file: activejob/lib/active_job/enqueuing.rb
+    lines: 51-58
+    body: >-
+      The class method does two things: make a job instance from the arguments (or use one you passed
+      in), and ask it to enqueue itself. It returns the job, or false if enqueuing failed, never the
+      result of perform.
+    code: |
+      def perform_later(...)
+        job = job_or_instantiate(...)
+        enqueue_result = job.enqueue
+
+        yield job if block_given?
+
+        enqueue_result
+      end
+    next: "job_or_instantiate → WelcomeEmailJob.new(user)"
+  - id: step-2
+    title: A job is a small object with an id
+    symbol: ActiveJob::Core#initialize
+    package: activejob
+    file: activejob/lib/active_job/core.rb
+    lines: 103-112
+    body: >-
+      The instance holds the raw arguments (the User object, not yet serialised), a fresh UUID job_id,
+      and the queue name and priority configured on the class. executions counts attempts, so retries can
+      tell how many times the job has already run.
+    code: |
+      def initialize(*arguments)
+        @arguments  = arguments
+        @job_id     = SecureRandom.uuid
+        @queue_name = self.class.queue_name
+        @scheduled_at = nil
+        @priority   = self.class.priority
+        @executions = 0
+        @exception_executions = {}
+        @timezone   = Time.zone&.name
+      end
+    next: Enqueuing#enqueue
+  - id: step-3
+    title: enqueue applies options and reports success
+    symbol: Enqueuing#enqueue
+    package: activejob
+    file: activejob/lib/active_job/enqueuing.rb
+    lines: 82-94
+    body: >-
+      set applies wait:, queue: and priority: options. raw_enqueue does the work and flips
+      successfully_enqueued; an adapter's EnqueueError is caught and stored in enqueue_error instead
+      of raised, which is why perform_later can return false.
+    code: |
+      def enqueue(options = {})
+        set(options)
+        self.successfully_enqueued = false
+        self.enqueue_error = nil
+
+        raw_enqueue
+
+        if successfully_enqueued?
+          self
+        else
+          false
+        end
+      end
+    next: raw_enqueue
+  - id: step-4
+    title: Optionally, wait for the database to commit
+    symbol: EnqueueAfterTransactionCommit#raw_enqueue
+    package: activejob
+    file: activejob/lib/active_job/enqueue_after_transaction_commit.rb
+    lines: 25-47
+    body: >-
+      When Active Record is loaded, Active Job's railtie includes this module, which overrides
+      raw_enqueue. If the job class has enqueue_after_transaction_commit set, the enqueue is registered
+      with ActiveRecord.after_all_transactions_commit, so a worker cannot pick the job up before the
+      user row it refers to is committed (with no transaction open, the block runs at once). With the
+      flag off, super runs straight away.
+    code: |
+      def raw_enqueue
+        if self.class.enqueue_after_transaction_commit
+          self.successfully_enqueued = true
+          deferred_scheduled_at = scheduled_at
+          deferred_queue_name = queue_name
+          deferred_priority = priority
+          ActiveRecord.after_all_transactions_commit do
+            previous_scheduled_at, previous_queue_name, previous_priority = scheduled_at, queue_name, priority
+            self.scheduled_at = deferred_scheduled_at
+            self.queue_name = deferred_queue_name
+            self.priority = deferred_priority
+            self.successfully_enqueued = false
+            super
+          ensure
+            self.scheduled_at = previous_scheduled_at
+            self.queue_name = previous_queue_name
+            self.priority = previous_priority
+          end
+          self
+        else
+          super
+        end
+      end
+    next: Enqueuing#raw_enqueue → _raw_enqueue
+  - id: step-5
+    title: Callbacks, then hand off to the adapter
+    symbol: Enqueuing#_raw_enqueue
+    package: activejob
+    file: activejob/lib/active_job/enqueuing.rb
+    lines: 97-113
+    body: >-
+      before_enqueue and around_enqueue callbacks wrap the hand-off. Active Job itself stores nothing:
+      the queue adapter (Solid Queue, Sidekiq, the in-process async adapter…) decides where the job
+      goes. A scheduled job calls enqueue_at with a timestamp instead.
+    code: |
+      def raw_enqueue
+        run_callbacks :enqueue do
+          _raw_enqueue
+        end
+      end
+
+      def _raw_enqueue
+        if scheduled_at
+          queue_adapter.enqueue_at self, scheduled_at.to_f
+        else
+          queue_adapter.enqueue self
+        end
+
+        self.successfully_enqueued = true
+      rescue EnqueueError => e
+        self.enqueue_error = e
+      end
+    next: "AsyncAdapter#enqueue(job)"
+  - id: step-6
+    title: The adapter keeps a serialised copy
+    symbol: AsyncAdapter#enqueue
+    package: activejob
+    file: activejob/lib/active_job/queue_adapters/async_adapter.rb
+    lines: 39-72
+    body: >-
+      The async adapter runs jobs on a thread pool in the same process, but it still serialises the
+      job, "for parity with other adapters". What an adapter stores is never the job object, only
+      the hash from job.serialize; a Redis- or database-backed adapter writes that hash as JSON.
+    code: |
+      def enqueue(job) # :nodoc:
+        @scheduler.enqueue JobWrapper.new(job), queue_name: job.queue_name
+      end
+      # ...
+      # Note that we don't actually need to serialize the jobs since we're
+      # performing them in-process, but we do so anyway for parity with other
+      # adapters and deployment environments. Otherwise, serialization bugs
+      # may creep in undetected.
+      class JobWrapper # :nodoc:
+        def initialize(job)
+          job.provider_job_id = SecureRandom.uuid
+          @job_data = job.serialize
+        end
+
+        def perform
+          Base.execute @job_data
+        end
+      end
+    next: ActiveJob::Core#serialize
+  - id: step-7
+    title: The job as a plain hash
+    symbol: ActiveJob::Core#serialize
+    package: activejob
+    file: activejob/lib/active_job/core.rb
+    lines: 117-132
+    body: >-
+      This hash is the whole job as far as the queue is concerned: which class to instantiate, its id,
+      queue, attempt count, the locale and time zone to restore, and the arguments in a JSON-safe form.
+    code: |
+      def serialize
+        {
+          "job_class"  => self.class.name,
+          "job_id"     => job_id,
+          "provider_job_id" => provider_job_id,
+          "queue_name" => queue_name,
+          "priority"   => priority,
+          "arguments"  => serialize_arguments_if_needed(arguments),
+          "executions" => executions,
+          "exception_executions" => exception_executions,
+          "locale"     => locale || I18n.locale.to_s,
+          "timezone"   => timezone,
+          "enqueued_at" => Time.now.utc.iso8601(9),
+          "scheduled_at" => scheduled_at ? scheduled_at.utc.iso8601(9) : nil,
+        }
+      end
+    next: "Arguments.serialize → serialize_argument(user)"
+  - id: step-8
+    title: A record travels as a GlobalID
+    symbol: ActiveJob::Arguments#serialize_argument
+    package: activejob
+    file: activejob/lib/active_job/arguments.rb
+    lines: 38-76
+    body: >-
+      Simple values pass through unchanged. An Active Record model includes GlobalID::Identification,
+      so the user becomes a reference such as gid://app/User/1, not a copy of its attributes. Hashes
+      remember which keys were symbols, and anything else must have a registered serializer.
+    code: |
+      def serialize_argument(argument) # :nodoc:
+        case argument
+        when nil, true, false, Integer, Float # Types that can hardly be subclassed
+          argument
+        when String
+          # ...
+        when Symbol
+          { Serializers::OBJECT_SERIALIZER_KEY => "ActiveJob::Serializers::SymbolSerializer", "value" => argument.name }
+        when GlobalID::Identification
+          convert_to_global_id_hash(argument)
+        when Array
+          argument.map { |arg| serialize_argument(arg) }
+        when ActiveSupport::HashWithIndifferentAccess
+          serialize_indifferent_hash(argument)
+        when Hash
+          # ...
+        else
+          Serializers.serialize(argument)
+        end
+      end
+    next: "(later, on a worker thread) JobWrapper#perform → Base.execute(job_data)"
+  - id: step-9
+    title: A worker turns the hash back into a job
+    symbol: Execution::ClassMethods#execute
+    package: activejob
+    file: activejob/lib/active_job/execution.rb
+    lines: 26-31
+    body: >-
+      Every adapter's worker ends up here, handing Active Job the stored hash. The execute callbacks
+      wrap the whole run; in a Rails app the railtie adds one that runs the job inside
+      app.reloader.wrap, so reloading and executor hooks behave as they do around a web request.
+    code: |
+      def execute(job_data) # :nodoc:
+        ActiveJob::Callbacks.run_callbacks(:execute) do
+          job = deserialize(job_data)
+          job.perform_now
+        end
+      end
+    next: Core::ClassMethods#deserialize(job_data)
+  - id: step-10
+    title: A new instance of the named class
+    symbol: Core::ClassMethods#deserialize
+    package: activejob
+    file: activejob/lib/active_job/core.rb
+    lines: 69-76
+    body: >-
+      The class is found by name, so renaming a job class breaks jobs already in the queue. The new
+      instance copies the fields back from the hash; the arguments stay serialised until perform_now needs them.
+    code: |
+      def deserialize(job_data)
+        job_class = job_data["job_class"].safe_constantize
+        raise UnknownJobClassError, job_data["job_class"] unless job_class
+
+        job = job_class.new
+        job.deserialize(job_data)
+        job
+      end
+    next: Execution#perform_now
+  - id: step-11
+    title: Arguments are revived, then perform runs
+    symbol: Execution#perform_now
+    package: activejob
+    file: activejob/lib/active_job/execution.rb
+    lines: 45-70
+    body: >-
+      executions is incremented, and the GlobalID is located: the User is loaded fresh from the database
+      now, not when it was enqueued. perform runs inside the perform callbacks. An exception goes to
+      rescue_from handlers first, which is where retry_on and discard_on hook in.
+    code: |
+      def perform_now
+        # Guard against jobs that were persisted before we started counting executions by zeroing out nil counters
+        self.executions = (executions || 0) + 1
+
+        deserialize_arguments_if_needed
+
+        _perform_job
+      rescue Exception => exception
+        handled = rescue_with_handler(exception)
+        return handled if handled
+
+        run_after_discard_procs(exception)
+        raise
+      end
+      # ...
+        def _perform_job
+          ActiveSupport::ExecutionContext[:job] = self
+          run_callbacks :perform do
+            perform(*arguments)
+          end
+        end
+    next: "WelcomeEmailJob#perform(user)"
+tracked_symbols:
+  - { symbol: "Enqueuing::ClassMethods#perform_later", file: activejob/lib/active_job/enqueuing.rb, used_in: step-1 }
+  - { symbol: "ActiveJob::Core#initialize", file: activejob/lib/active_job/core.rb, used_in: step-2 }
+  - { symbol: "Enqueuing#enqueue", file: activejob/lib/active_job/enqueuing.rb, used_in: step-3 }
+  - { symbol: "EnqueueAfterTransactionCommit#raw_enqueue", file: activejob/lib/active_job/enqueue_after_transaction_commit.rb, used_in: step-4 }
+  - { symbol: "Enqueuing#_raw_enqueue", file: activejob/lib/active_job/enqueuing.rb, used_in: step-5 }
+  - { symbol: "AsyncAdapter#enqueue", file: activejob/lib/active_job/queue_adapters/async_adapter.rb, used_in: step-6 }
+  - { symbol: "ActiveJob::Core#serialize", file: activejob/lib/active_job/core.rb, used_in: step-7 }
+  - { symbol: "ActiveJob::Arguments#serialize_argument", file: activejob/lib/active_job/arguments.rb, used_in: step-8 }
+  - { symbol: "Execution::ClassMethods#execute", file: activejob/lib/active_job/execution.rb, used_in: step-9 }
+  - { symbol: "Core::ClassMethods#deserialize", file: activejob/lib/active_job/core.rb, used_in: step-10 }
+  - { symbol: "Execution#perform_now", file: activejob/lib/active_job/execution.rb, used_in: step-11 }
